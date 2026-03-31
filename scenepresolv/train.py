@@ -1,0 +1,226 @@
+from pathlib import Path
+import sys
+import os
+from datetime import datetime
+
+import click
+import torch
+from torch.utils.data import DataLoader
+import wandb
+
+from scenepresolv.utils import get_device
+from scenepresolv.utils import seed as useed
+from scenepresolv.utils import file_to_list
+from scenepresolv.utils import gradient_summary
+from scenepresolv.dataset import ImageDataset
+from scenepresolv.model_p01_p99.model import Model as Model_p99
+from scenepresolv.model_p01_p99.trainer import Trainer as Trainer_p99
+from scenepresolv.model_p01_p99.evaluation import evaluation as evaluation_p99
+
+
+def init_wandb(
+    wandb_project,
+    wandb_entity,
+    wandb_name,
+    model_type,
+    **kwargs
+):
+    timestamp = datetime.now().strftime(
+        f"%Y%m%d_%H%M%S_%f_{wandb_name}"
+    )
+    try:
+        wandb_config = {
+            'lr': kwargs.get('lr'),
+            'epochs': kwargs.get('epochs'),
+            'batch_size': kwargs.get('batch_size'),
+            'model_type': model_type,
+        }
+        wandb_config.update(kwargs)
+
+        run = wandb.init(
+            project=wandb_project,
+            entity=wandb_entity,
+            name=timestamp,
+            dir='./',
+            config=wandb_config,
+            settings=wandb.Settings(_service_wait=300)
+        )
+        return run
+
+    except Exception as e:
+        print("WandB error!")
+        print(e)
+        sys.exit(1)
+
+
+@click.command()
+@click.argument('train_rdn_path')
+@click.argument('train_atm_path')
+@click.argument('train_obs_path')
+@click.argument('test_rdn_path')
+@click.argument('test_atm_path')
+@click.argument('test_obs_path')
+@click.argument('wavelength_grid')
+@click.argument('outdir')
+@click.argument('model')
+@click.argument('wandb_name')
+@click.argument('wandb_entity')
+@click.argument('wandb_project')
+@click.option('--cube_cache_root', default='')
+@click.option('--batch_size', default=20)
+@click.option('--nsamples', default=100)
+@click.option('--epochs', default=20)
+@click.option('--seed', default=42)
+@click.option('--save_every_epoch', is_flag=True, default=False)
+@click.argument("kwargs", nargs=-1)
+def train(
+    train_rdn_path: str,
+    train_atm_path: str,
+    train_obs_path: str,
+    test_rdn_path: str,
+    test_atm_path: str,
+    test_obs_path: str,
+    wavelength_grid: str,
+    outdir: str,
+    model: str,
+    wandb_name: str,
+    wandb_entity: str,
+    wandb_project: str,
+    cube_cache_root: str = None,
+    batch_size: int = 20,
+    nsamples: int = 300,
+    epochs: int = 20,
+    seed: int = 42,
+    save_every_epoch: bool = False,
+    **kwargs
+):
+    useed(seed)
+    device = get_device()
+
+    cache_root = Path(cube_cache_root)
+    train_dataset = ImageDataset(
+        file_to_list(train_rdn_path),
+        file_to_list(train_atm_path),
+        file_to_list(train_obs_path),
+        nsamples=nsamples,
+        wl_grid=wavelength_grid,
+        target_fun=model,
+        cache_cube=True,
+        save_to_disk=True,
+        cache_root=os.path.join(
+            cache_root.parent,
+            'train_' + cache_root.stem
+        )
+    )
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+    )
+
+    test_dataset = ImageDataset(
+        file_to_list(test_rdn_path),
+        file_to_list(test_atm_path),
+        file_to_list(test_obs_path),
+        nsamples=nsamples,
+        wl_grid=wavelength_grid,
+        target_fun=model,
+        cache_cube=True,
+        save_to_disk=True,
+        cache_root=os.path.join(
+            cache_root.parent,
+            'test_' + cache_root.stem
+        )
+    )
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+    )
+
+    run = init_wandb(
+        wandb_project,
+        wandb_entity,
+        wandb_name,
+        model,
+        epochs=epochs,
+        batch_size=batch_size,
+    )
+
+    if model == 'p99':
+        use_wl = train_dataset.wl
+        b = len(use_wl)
+        model = Model_p99(b, hidden=256).to(device)
+
+        opt = torch.optim.AdamW([
+            {"params": model.p1_head.parameters(), "lr": 1e-4},
+            {"params": model.p2_head.parameters(), "lr": 1e-4},
+            {"params": model.mlp.parameters(), "lr": 1e-4},
+        ], lr=1e-4)
+
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt,
+            T_max=epochs,
+            eta_min=1e-6,
+        )
+
+        trainer = Trainer_p99(
+            quantiles=[.01, .99]
+        )
+
+        evaluation = evaluation_p99
+    else:
+        raise ValueError("Model string is invalid")
+
+    for epoch in range(epochs):
+        model.train()
+        train_epoch_total_loss = 0
+
+        for ite, batch_ in enumerate(train_dataloader):
+            x = batch_['toa'].to(device)
+            target = batch_['atmosphere'].to(device)
+
+            loss, model, opt = trainer.step(
+                x, target, model, opt
+            )
+
+            run.log({"train/total_loss": loss})
+            train_epoch_total_loss += loss
+            train_epoch_total_loss /= len(train_dataloader)
+
+        scheduler.step()
+        model.eval()
+        run.log({"train/epoch_total_loss": train_epoch_total_loss})
+        train_eval_dict = evaluation(
+            train_dataloader, model, device, trainer.loss_fn
+        )
+        for key, value in train_eval_dict.items():
+            run.log({f"train/{key}": value})
+
+        test_eval_dict = evaluation(
+            test_dataloader, model, device, trainer.loss_fn,
+        )
+        for key, value in test_eval_dict.items():
+            run.log({f"test/{key}": value})
+        run.log({"epoch": epoch})
+
+        timestamp = datetime.now().strftime(
+            f"%Y%m%d_%H%M%S_%f_{wandb_name}"
+        )
+        if save_every_epoch:
+            torch.save(
+                model.state_dict(),
+                os.path.join(outdir, f"presolve_{timestamp}_{epoch}.pt")
+            )
+    if not save_every_epoch:
+        torch.save(
+            model.state_dict(),
+            os.path.join(outdir, f"spectf_presolve_{timestamp}.pt")
+        )
+
+    gradient_summary(model)
+    run.finish()
+
+
+if __name__ == '__main__':
+    train()
