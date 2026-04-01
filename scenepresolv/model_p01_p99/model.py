@@ -16,25 +16,33 @@ class Model(nn.Module):
             nn.Linear(hidden, hidden)
         )
 
-        self.p1_head = nn.Sequential(
-            nn.LayerNorm(3 * hidden),
-            nn.Linear(3 * hidden, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, 1)
-        )
-        self.p2_head = nn.Sequential(
-            nn.LayerNorm(3 * hidden),
-            nn.Linear(3 * hidden, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, 1)
-        )
-        # self.base = nn.Sequential(
+        # self.p1_head = nn.Sequential(
         #     nn.LayerNorm(3 * hidden),
         #     nn.Linear(3 * hidden, hidden),
         #     nn.GELU(),
+        #     nn.Linear(hidden, 1)
         # )
-        # self.p1_head = nn.Linear(hidden, 1)
-        # self.p2_head = nn.Linear(hidden, 1)
+        # self.p2_head = nn.Sequential(
+        #     nn.LayerNorm(3 * hidden),
+        #     nn.Linear(3 * hidden, hidden),
+        #     nn.GELU(),
+        #     nn.LayerNorm(hidden),
+        #     nn.Linear(hidden, hidden // 2),
+        #     nn.GELU(),
+        #     nn.Linear(hidden // 2, 1)
+        # )
+        self.base = nn.Sequential(
+            nn.LayerNorm(3 * hidden),
+            nn.Linear(3 * hidden, hidden),
+            nn.GELU(),
+        )
+        self.p1_head = nn.Linear(hidden, 1)
+        self.p2_head = nn.Sequential(
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, hidden // 2),
+            nn.GELU(),
+            nn.Linear(hidden // 2, 1)
+        )
 
     def pool(self, x, tau=0.1):
         w_min = torch.softmax(-x / tau, dim=1)
@@ -50,10 +58,10 @@ class Model(nn.Module):
 
     def forward(self, x):
         x = self.pool(self.mlp(x))
-        # x = self.base(x)
+        x = self.base(x)
         low = self.bounded_output(self.p1_head(x), 0.0, 6.0)
         # high = self.bounded_output(self.p2_head(x), 0.0, 6.0)
-        delta = self.bounded_output(self.p2_head(x), 0.5, 6.0)
+        delta = self.p2_head(x)
         high = low + delta
 
         return torch.cat([low, high], dim=1)
