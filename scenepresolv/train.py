@@ -72,7 +72,7 @@ def init_wandb(
 @click.option('--epochs', default=20)
 @click.option('--seed', default=42)
 @click.option('--save_every_epoch', is_flag=True, default=False)
-@click.argument("kwargs", nargs=-1)
+@click.option('--just_cube', is_flag=True, default=False)
 def train(
     train_rdn_path: str,
     train_atm_path: str,
@@ -92,7 +92,7 @@ def train(
     epochs: int = 20,
     seed: int = 42,
     save_every_epoch: bool = False,
-    **kwargs
+    just_cube: bool = False
 ):
     useed(seed)
     device = get_device()
@@ -137,6 +137,9 @@ def train(
         batch_size=batch_size,
         shuffle=False,
     )
+    if just_cube:
+        print("Finished just building cube")
+        return
 
     run = init_wandb(
         wandb_project,
@@ -150,18 +153,18 @@ def train(
     if model == 'p99':
         use_wl = train_dataset.wl
         b = len(use_wl)
-        model = Model_p99(b, hidden=256).to(device)
+        model = Model_p99(b, hidden=512).to(device)
 
         opt = torch.optim.AdamW([
-            {"params": model.p1_head.parameters(), "lr": 1e-4},
-            {"params": model.p2_head.parameters(), "lr": 1e-4},
-            {"params": model.mlp.parameters(), "lr": 1e-4},
-        ], lr=1e-4)
+            {"params": model.p1_head.parameters(), "lr": 1e-3},
+            {"params": model.p2_head.parameters(), "lr": 1e-3},
+            {"params": model.mlp.parameters(), "lr": 1e-3},
+        ], lr=1e-3)
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt,
             T_max=epochs,
-            eta_min=1e-6,
+            eta_min=1e-4,
         )
 
         trainer = Trainer_p99(
