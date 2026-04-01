@@ -153,13 +153,13 @@ def train(
     if model == 'p99':
         use_wl = train_dataset.wl
         b = len(use_wl)
-        model = Model_p99(b, hidden=512).to(device)
+        model = Model_p99(b, hidden=256).to(device)
 
         opt = torch.optim.AdamW([
             {"params": model.p1_head.parameters(), "lr": 1e-3},
             {"params": model.p2_head.parameters(), "lr": 1e-3},
             {"params": model.mlp.parameters(), "lr": 1e-3},
-        ], lr=1e-3)
+        ], lr=1e-4)
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt,
@@ -169,6 +169,29 @@ def train(
 
         trainer = Trainer_p99(
             quantiles=[.01, .99]
+        )
+
+        evaluation = evaluation_p99
+
+    if model == 'p95':
+        use_wl = train_dataset.wl
+        b = len(use_wl)
+        model = Model_p99(b, hidden=512).to(device)
+
+        opt = torch.optim.AdamW([
+            {"params": model.p1_head.parameters(), "lr": 1e-3},
+            {"params": model.p2_head.parameters(), "lr": 1e-3},
+            {"params": model.mlp.parameters(), "lr": 1e-3},
+        ], lr=1e-4)
+
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt,
+            T_max=epochs,
+            eta_min=1e-4,
+        )
+
+        trainer = Trainer_p99(
+            quantiles=[.05, .95]
         )
 
         evaluation = evaluation_p99
