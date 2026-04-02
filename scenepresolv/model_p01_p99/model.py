@@ -16,53 +16,48 @@ class Model(nn.Module):
             nn.Linear(hidden, hidden)
         )
 
-        # self.p1_head = nn.Sequential(
-        #     nn.LayerNorm(3 * hidden),
-        #     nn.Linear(3 * hidden, hidden),
-        #     nn.GELU(),
-        #     nn.Linear(hidden, 1)
-        # )
-        # self.p2_head = nn.Sequential(
-        #     nn.LayerNorm(3 * hidden),
-        #     nn.Linear(3 * hidden, hidden),
-        #     nn.GELU(),
-        #     nn.LayerNorm(hidden),
-        #     nn.Linear(hidden, hidden // 2),
-        #     nn.GELU(),
-        #     nn.Linear(hidden // 2, 1)
-        # )
-        self.base = nn.Sequential(
-            nn.LayerNorm(3 * hidden),
-            nn.Linear(3 * hidden, hidden),
+        self.p1_head = nn.Sequential(
+            # nn.LayerNorm(3 * hidden),
+            # nn.Linear(3 * hidden, hidden),
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, hidden // 2),
             nn.GELU(),
+            nn.Linear(hidden // 2, 1)
         )
-        self.p1_head = nn.Linear(hidden, 1)
         self.p2_head = nn.Sequential(
+            # nn.LayerNorm(3 * hidden),
+            # nn.Linear(3 * hidden, hidden),
+            # nn.GELU(),
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden // 2),
             nn.GELU(),
             nn.Linear(hidden // 2, 1)
         )
 
-    def pool(self, x, tau=0.1):
-        w_min = torch.softmax(-x / tau, dim=1)
-        w_max = torch.softmax( x / tau, dim=1)
-        min_term = torch.sum(w_min * x, dim=1)
-        mean_term = torch.mean(x, dim=1)
-        max_term = torch.sum(w_max * x, dim=1)
-        return torch.cat([min_term, mean_term, max_term], dim=-1)
+        self.tau_min_raw = nn.Parameter(torch.tensor(0.0))
+        self.tau_max_raw = nn.Parameter(torch.tensor(0.0))
 
     @staticmethod
     def bounded_output(x, low=0.04, high=6.0):
         return low + (high - low) * torch.sigmoid(x)
 
     def forward(self, x):
-        x = self.pool(self.mlp(x))
-        x = self.base(x)
-        low = self.bounded_output(self.p1_head(x), 0.0, 6.0)
-        # high = self.bounded_output(self.p2_head(x), 0.0, 6.0)
-        delta = self.p2_head(x)
+        # x = self.pool(self.mlp(x))
+        x = self.mlp(x)
+        # x = self.base(x)
+
+        tau_min = nn.Softplus()(self.tau_min_raw) + 1e-2
+        tau_max = nn.Softplus()(self.tau_max_raw) + 1e-2
+
+        w_min = torch.softmax(-x / tau_min, dim=1)
+        w_max = torch.softmax( x / tau_max, dim=1)
+
+        x_min = (w_min * x).sum(dim=1)
+        x_mean = x.mean(dim=1)
+        x_max = (w_max * x).sum(dim=1)
+
+        low  = self.bounded_output(self.p1_head(x_mean - x_min), 0.0, 6.0)
+        delta = self.bounded_output(self.p2_head(x_max - x_mean), 0.0, 6.0)
         high = low + delta
 
         return torch.cat([low, high], dim=1)
-        # return torch.sort(torch.cat([low, high], dim=1).squeeze(1)).values

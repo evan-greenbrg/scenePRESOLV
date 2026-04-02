@@ -159,7 +159,8 @@ def train(
             {"params": model.p1_head.parameters(), "lr": 1e-3},
             {"params": model.p2_head.parameters(), "lr": 1e-3},
             {"params": model.mlp.parameters(), "lr": 1e-3},
-        ], lr=1e-4)
+            {"params": [model.tau_min_raw, model.tau_max_raw], "lr": 1e-2},
+        ], weight_decay=1e-4)
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt,
@@ -173,7 +174,7 @@ def train(
 
         evaluation = evaluation_p99
 
-    if model == 'p95':
+    elif model == 'p95':
         use_wl = train_dataset.wl
         b = len(use_wl)
         model = Model_p99(b, hidden=512).to(device)
@@ -182,7 +183,8 @@ def train(
             {"params": model.p1_head.parameters(), "lr": 1e-3},
             {"params": model.p2_head.parameters(), "lr": 1e-3},
             {"params": model.mlp.parameters(), "lr": 1e-3},
-        ], lr=1e-4)
+            {"params": [model.tau_min_raw, model.tau_max_raw], "lr": 1e-2},
+        ], weight_decay=1e-4)
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt,
