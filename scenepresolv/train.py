@@ -159,7 +159,8 @@ def train(
             {"params": model.p1_head.parameters(), "lr": 1e-3},
             {"params": model.p2_head.parameters(), "lr": 1e-3},
             {"params": model.mlp.parameters(), "lr": 1e-3},
-            {"params": [model.tau_min_raw, model.tau_max_raw], "lr": 1e-2},
+            {"params": [model.tau_min_raw], "lr": 1e-2},
+            {"params": model.residual_attn.parameters(),"lr": 3e-3, "weight_decay": 0.0}
         ], weight_decay=1e-4)
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -169,7 +170,8 @@ def train(
         )
 
         trainer = Trainer_p99(
-            quantiles=[.01, .99]
+            quantiles=[.01, .99],
+            run=run
         )
 
         evaluation = evaluation_p99
@@ -183,7 +185,8 @@ def train(
             {"params": model.p1_head.parameters(), "lr": 1e-3},
             {"params": model.p2_head.parameters(), "lr": 1e-3},
             {"params": model.mlp.parameters(), "lr": 1e-3},
-            {"params": [model.tau_min_raw, model.tau_max_raw], "lr": 1e-2},
+            {"params": [model.tau_min_raw], "lr": 1e-2},
+            {"params": model.residual_attn.parameters(),"lr": 3e-3, "weight_decay": 0.0}
         ], weight_decay=1e-4)
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -193,7 +196,8 @@ def train(
         )
 
         trainer = Trainer_p99(
-            quantiles=[.05, .95]
+            quantiles=[.05, .95],
+            run=run
         )
 
         evaluation = evaluation_p99
