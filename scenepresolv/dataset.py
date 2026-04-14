@@ -121,6 +121,9 @@ class ImageDataset(Dataset):
         if target_fun == 'IQR':
             self.target_fun = self.calc_qrange(0.25, 0.75)
             self.target_dim = 2
+        if target_fun == 'p90':
+            self.target_fun = self.calc_qrange(0.1, 0.9)
+            self.target_dim = 2
         if target_fun == 'p95':
             self.target_fun = self.calc_qrange(0.05, 0.95)
             self.target_dim = 2

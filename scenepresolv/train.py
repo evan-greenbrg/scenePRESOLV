@@ -17,6 +17,10 @@ from scenepresolv.model_p01_p99.model import Model as Model_p99
 from scenepresolv.model_p01_p99.trainer import Trainer as Trainer_p99
 from scenepresolv.model_p01_p99.evaluation import evaluation as evaluation_p99
 
+from scenepresolv.model_quantile_encoder.model import Model as Model_attn
+from scenepresolv.model_quantile_encoder.trainer import Trainer as Trainer_attn
+from scenepresolv.model_quantile_encoder.evaluation import evaluation as evaluation_attn
+
 
 def init_wandb(
     wandb_project,
@@ -201,6 +205,33 @@ def train(
         )
 
         evaluation = evaluation_p99
+
+    elif model == 'attn':
+        use_wl = train_dataset.wl
+        b = len(use_wl)
+        model = Model_attn(b, hidden=256).to(device)
+
+        opt = torch.optim.AdamW([
+            {"params": model.p1_head.parameters(), "lr": 2e-4},
+            {"params": model.p2_head.parameters(), "lr": 2e-4},
+            {"params": model.mlp.parameters(), "lr": 1e-4},
+            {"params": model.attn_encoder.parameters(), "lr": 1e-4},
+            {"params": model.score.parameters(), "lr": 1e-4},
+        ], weight_decay=1e-4)
+
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt,
+            T_max=epochs,
+            eta_min=1e-4,
+        )
+
+        trainer = Trainer_attn(
+            quantiles=[.05, .95],
+            run=run
+        )
+
+        evaluation = evaluation_attn
+
     else:
         raise ValueError("Model string is invalid")
 

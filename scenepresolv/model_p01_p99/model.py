@@ -45,7 +45,6 @@ class Model(nn.Module):
         tau_min = nn.Softplus()(self.tau_min_raw) + 1e-2
         w_min = torch.softmax(-x / (tau_min * x_std), dim=1)
         x_min = (w_min * x).sum(dim=1)
-        print(x.shape)
 
         # High aggregation
         x_mean = x.mean(dim=1)

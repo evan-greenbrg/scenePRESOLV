@@ -1,0 +1,119 @@
+import torch
+from torch import nn
+
+
+class BandAttentionReducer(nn.Module):
+    def __init__(self, hidden=256, nheads=4):
+        super().__init__()
+
+        # Hidden shared encoding across wavelength grids
+        self.hidden = hidden
+        
+        # Project each scalar band value to hidden dim
+        self.band_proj = nn.Sequential(
+            nn.Linear(1, hidden),
+            nn.Tanh()
+        )
+        
+        # Project known wavelength (scalar) to hidden dim
+        self.wavelength_proj = nn.Linear(1, hidden)
+        
+        # Cross-attention readout
+        self.readout = nn.Parameter(torch.randn(1, 1, hidden))
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=hidden,
+            num_heads=nheads,
+            batch_first=True
+        )
+        self.norm = nn.LayerNorm(hidden)
+
+        self.wl_mean = 1440
+        self.wl_std = 600
+
+    def forward(self, x, wl):
+        """
+        x:           (s, n, b)
+        wavelengths: (b,) in nm e.g. tensor([443, 490, 560, ...])
+        """
+        batch, samples, bands = x.shape
+        
+        # Project band values
+        x = x.view(batch * samples, bands, 1)
+        tokens = self.band_proj(x)
+        
+        # Normalize to [0, 1] range — keeps inputs well-scaled
+        wl_norm = (wl.float() - self.wl_mean) / self.wl_std
+        wl_enc = self.wavelength_proj(
+            wl_norm.view(-1, 1)
+        ).unsqueeze(0)
+        tokens = tokens + wl_enc
+        
+        # Cross-attend
+        query = self.readout.expand(batch * samples, -1, -1)
+        out, _ = self.cross_attn(query, tokens, tokens)
+        out = self.norm(out.squeeze(1))
+        
+        return out.view(batch, samples, self.hidden)
+
+
+class Model(nn.Module):
+    def __init__(
+        self,
+        b,
+        hidden=256,
+        **kwargs
+    ):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, hidden),
+        )
+
+        self.attn_encoder = BandAttentionReducer(hidden)
+
+        self.p1_head = nn.Sequential(
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, 1)
+        )
+        self.p2_head = nn.Sequential(
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, 1)
+        )
+        # self.p1_head = nn.Linear(hidden, 1)
+        # self.p2_head = nn.Linear(hidden, 1)
+
+        self.tau_min_raw = nn.Parameter(torch.tensor(0.0))
+        self.max_residual_attn = nn.Linear(hidden, 1)
+    
+        self.log_var_low = nn.Parameter(torch.tensor(0.0))
+        self.log_var_high = nn.Parameter(torch.tensor(0.0))
+
+        # May not end up keeping this. A shared learnable weight
+        self.score = nn.Linear(hidden, 1)
+
+    @staticmethod
+    def bounded_output(x, low=0.04, high=6.0):
+        return low + (high - low) * torch.sigmoid(x)
+    
+    def soft_pool(self, x, q, beta=10.0):
+        # scores = x.norm(dim=-1, keepdim=True)
+        scores = self.score(x)
+        w = torch.softmax((q * beta) * scores, dim=1)
+        return (w * x).sum(dim=1)
+
+    def forward(self, x, wl=[]):
+        x = self.attn_encoder(x, wl)
+        x = self.mlp(x)
+
+        # Low aggregation
+        x_min = self.soft_pool(x, -.99)
+        # High aggregation
+        x_max = self.soft_pool(x, .99)
+
+        # Targets
+        low  = self.bounded_output(self.p1_head(x_min), 0.05, 5.5)
+        high = self.bounded_output(self.p2_head(x_max), 0.5, 6.0)
+
+        return torch.cat([low, high], dim=1)
