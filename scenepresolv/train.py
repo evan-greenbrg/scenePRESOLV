@@ -5,6 +5,7 @@ from datetime import datetime
 
 import click
 import torch
+from torch import nn
 from torch.utils.data import DataLoader
 import wandb
 
@@ -55,6 +56,13 @@ def init_wandb(
         print("WandB error!")
         print(e)
         sys.exit(1)
+
+
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_uniform_(m.weight)
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
 
 
 @click.command()
@@ -211,20 +219,25 @@ def train(
         b = len(use_wl)
         model = Model_attn(b, hidden=256).to(device)
 
+        model.apply(init_weights)
+        nn.init.xavier_uniform_(model.attn_encoder.readout)
+
         run.watch(model, log="all", log_freq=100)
 
         opt = torch.optim.AdamW([
             {"params": model.p1_head.parameters(), "lr": 1e-4},
             {"params": model.p2_head.parameters(), "lr": 1e-4},
             {"params": model.mlp.parameters(), "lr": 2e-4},
-            {"params": model.attn_encoder.parameters(), "lr": 3e-4},
+            {"params": model.low_mlp.parameters(), "lr": 2e-4},
+            {"params": model.high_mlp.parameters(), "lr": 2e-4},
+            {"params": model.attn_encoder.parameters(), "lr": 2e-3},
         ], weight_decay=1e-4)
 
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            opt,
-            T_max=epochs,
-            eta_min=1e-4,
-        )
+        # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #     opt,
+        #     T_max=epochs,
+        #     eta_min=1e-4,
+        # )
 
         # TODO allow this to vary within batch?
         wl = torch.tensor(
@@ -259,7 +272,7 @@ def train(
             train_epoch_total_loss += (loss_low + loss_high)
             train_epoch_total_loss /= len(train_dataloader)
 
-        scheduler.step()
+        # scheduler.step()
         model.eval()
         run.log({"train/epoch_total_loss": train_epoch_total_loss})
         train_eval_dict = evaluation(

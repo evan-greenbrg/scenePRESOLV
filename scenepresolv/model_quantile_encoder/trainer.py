@@ -13,8 +13,8 @@ class Trainer:
         self.device = get_device()
 
         self.loss_fn = partial(
-            pinball_loss,
-            # mape_loss,
+            # pinball_loss,
+            mape_loss,
             quantiles=quantiles
         )
 

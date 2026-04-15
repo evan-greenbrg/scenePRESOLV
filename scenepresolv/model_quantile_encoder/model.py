@@ -22,6 +22,8 @@ class BandAttentionReducer(nn.Module):
         
         # Cross-attention readout
         self.readout = nn.Parameter(torch.randn(1, 1, hidden))
+        nn.init.normal_(self.readout, std=0.02)
+
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=hidden,
             num_heads=nheads,
@@ -88,12 +90,12 @@ class Model(nn.Module):
         )
 
         self.p1_head = nn.Sequential(
-            nn.LayerNorm(2 * hidden),
-            nn.Linear(2 * hidden, 1)
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, 1)
         )
         self.p2_head = nn.Sequential(
-            nn.LayerNorm(2 * hidden),
-            nn.Linear(2 * hidden, 1)
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, 1)
         )
 
     @staticmethod
@@ -111,20 +113,14 @@ class Model(nn.Module):
 
         # Pooling
         x_low  = x + self.low_mlp(x)
+        x_low = x_low.min(dim=1).values
+
         x_high = x + self.high_mlp(x)
-
-        x_low = torch.cat([
-            x_low.mean(dim=1),
-            x_low.std(dim=1)
-        ], dim=-1)
-
-        x_high = torch.cat([
-            x_high.mean(dim=1),
-            x_high.std(dim=1)
-        ], dim=-1)
+        x_high = x_high.max(dim=1).values
 
         # Targets
         low = self.p1_head(x_low)
-        high = self.p2_head(x_high)
+        delta = self.p2_head(x_high)
+        high = low.detach() + delta
 
         return torch.cat([low, high], dim=1)
