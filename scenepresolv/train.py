@@ -249,7 +249,7 @@ def train(
             target = batch_['atmosphere'].to(device)
 
             loss, model, opt = trainer.step(
-                x, target, model, opt, wl
+                x, target, model, opt
             )
 
             run.log({"train/total_loss": loss})
