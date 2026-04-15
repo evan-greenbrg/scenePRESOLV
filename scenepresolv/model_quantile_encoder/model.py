@@ -16,8 +16,6 @@ class BandAttentionReducer(nn.Module):
             nn.Linear(1, hidden),
             nn.GELU()
         )
-        # nn.init.normal_(self.band_proj.Linear.weight, std=0.02)
-        # nn.init.zeros_(self.band_proj.Linear.bias)
         
         # Project known wavelength (scalar) to hidden dim
         self.wavelength_proj = nn.Linear(1, hidden)
@@ -76,36 +74,14 @@ class Model(nn.Module):
         **kwargs
     ):
         super().__init__()
-        # self.attn_encoder = BandAttentionReducer(hidden)
-        self.attn_encoder = SpecTfEncoder(
-            banddef,
-            dim_output=hidden,
-            num_heads=8,
-            dim_proj=64,
-            dim_ff=64,
-            dropout=0.1,
-            agg='max',
-            use_residual=False,
-            num_layers=1
+        self.hidden = hidden
+        self.attn_encoder = BandAttentionReducer(hidden)
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, hidden),
         )
-        # self.mlp = nn.Sequential(
-        #     nn.LayerNorm(hidden),
-        #     nn.Linear(hidden, hidden),
-        #     nn.GELU(),
-        #     nn.Linear(hidden, hidden),
-        # )
-
-        # self.low_mlp = nn.Sequential(
-        #     nn.LayerNorm(hidden),
-        #     nn.Linear(hidden, hidden),
-        #     nn.GELU()
-        # )
-
-        # self.high_mlp = nn.Sequential(
-        #     nn.LayerNorm(hidden),
-        #     nn.Linear(hidden, hidden),
-        #     nn.GELU()
-        # )
 
         self.p1_head = nn.Sequential(
             nn.LayerNorm(hidden),
@@ -136,10 +112,8 @@ class Model(nn.Module):
         return (w * x).sum(dim=1)
 
     def forward(self, x, wl=[]):
-        b, s, n = x.shape
-        x = self.attn_encoder(x.view(b * s, n).unsqueeze(-1))
-        x = x.view(b, s, self.hidden)
-        # x = self.mlp(x)
+        x = self.attn_encoder(x, wl)
+        x = self.mlp(x)
 
         # Pooling
         beta_low = torch.relu(self.beta_low) + 1e-3
@@ -148,15 +122,11 @@ class Model(nn.Module):
         beta_low = beta_low.clamp(0.5, 20.0)
         beta_high = beta_high.clamp(0.5, 20.0)
 
-        # x_low  = x + self.low_mlp(x)
         x_low = self.soft_pool(x, q=-1, beta=beta_low)
-
-        x_high = x + self.high_mlp(x)
         x_high = self.soft_pool(x, q=1, beta=beta_high)
 
         # Targets
         low = self.p1_head(x_low)
-        delta = self.p2_head(x_high)
-        high = low + delta
+        high = self.p2_head(x_high)
 
         return torch.cat([low, high], dim=1)
