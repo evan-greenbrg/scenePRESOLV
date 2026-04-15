@@ -217,7 +217,8 @@ def train(
     elif model == 'attn':
         use_wl = train_dataset.wl
         b = len(use_wl)
-        model = Model_attn(b, hidden=256).to(device)
+        banddef = torch.tensor(use_wl, dtype=torch.float32).to(device)
+        model = Model_attn(banddef, hidden=256).to(device)
 
         model.apply(init_weights)
         # nn.init.xavier_uniform_(model.attn_encoder.readout)
@@ -227,9 +228,9 @@ def train(
         opt = torch.optim.AdamW([
             {"params": model.p1_head.parameters(), "lr": 1e-4},
             {"params": model.p2_head.parameters(), "lr": 1e-4},
-            {"params": model.mlp.parameters(), "lr": 2e-4},
-            {"params": model.low_mlp.parameters(), "lr": 2e-4},
-            {"params": model.high_mlp.parameters(), "lr": 2e-4},
+            # {"params": model.mlp.parameters(), "lr": 2e-4},
+            # {"params": model.low_mlp.parameters(), "lr": 2e-4},
+            # {"params": model.high_mlp.parameters(), "lr": 2e-4},
             {"params": model.attn_encoder.parameters(), "lr": 3e-3},
             {"params": [model.beta_low, model.beta_high], "lr": 1e-2},
         ], weight_decay=1e-4)

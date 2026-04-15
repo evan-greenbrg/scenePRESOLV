@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 
+from spectf.model import SpecTfEncoder
+
 
 class BandAttentionReducer(nn.Module):
     def __init__(self, hidden=256, nheads=4):
@@ -66,87 +68,44 @@ class BandAttentionReducer(nn.Module):
         return out.view(batch, samples, self.hidden)
 
 
-class SetPool(nn.Module):
-    def __init__(self, hidden):
-        super().__init__()
-        self.query = nn.Parameter(torch.randn(1, 1, hidden))
-        self.attn = nn.MultiheadAttention(hidden, 4, batch_first=True)
-
-    def forward(self, x):
-        q = self.query.expand(x.size(0), -1, -1)
-        out, _ = self.attn(q, x, x)
-        return out.squeeze(1)# 
-
-
-class BandSetModel(nn.Module):
-    def __init__(self, hidden=256):
-        super().__init__()
-
-        self.band_proj = nn.Linear(1, hidden)
-        self.wl_proj = nn.Linear(1, hidden)
-
-        self.token_norm = nn.LayerNorm(hidden)
-
-        self.self_attn = nn.MultiheadAttention(hidden, 4, batch_first=True)
-        self.attn_norm = nn.LayerNorm(hidden)
-
-    def forward(self, x, wl):
-        B, S, bands = x.shape
-
-        x = x.view(B*S, bands, 1)
-
-        wl = (wl - wl.mean()) / (wl.std() + 1e-6)
-        wl = self.wl_proj(wl[:, None]).unsqueeze(0)
-
-        tokens = self.band_proj(x) + wl
-        tokens = self.token_norm(tokens)
-
-        h, _ = self.self_attn(tokens, tokens, tokens)
-        tokens = self.attn_norm(tokens + h)
-
-        return tokens.view(B, S, -1)
-
-
-class SamplePool(nn.Module):
-    def __init__(self, hidden):
-        super().__init__()
-        self.query = nn.Parameter(torch.randn(1, 1, hidden))
-        self.attn = nn.MultiheadAttention(hidden, 4, batch_first=True)
-
-    def forward(self, x):
-        # x: (B, S, H)
-        q = self.query.expand(x.size(0), -1, -1)
-        out, _ = self.attn(q, x, x)
-        return out.squeeze(1)
-
-
 class Model(nn.Module):
     def __init__(
         self,
-        b,
+        banddef,
         hidden=256,
         **kwargs
     ):
         super().__init__()
-        self.mlp = nn.Sequential(
-            nn.LayerNorm(hidden),
-            nn.Linear(hidden, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, hidden),
+        # self.attn_encoder = BandAttentionReducer(hidden)
+        self.attn_encoder = SpecTfEncoder(
+            banddef,
+            dim_output=hidden,
+            num_heads=8,
+            dim_proj=64,
+            dim_ff=64,
+            dropout=0.1,
+            agg='max',
+            use_residual=False,
+            num_layers=1
         )
-        self.attn_encoder = BandAttentionReducer(hidden)
+        # self.mlp = nn.Sequential(
+        #     nn.LayerNorm(hidden),
+        #     nn.Linear(hidden, hidden),
+        #     nn.GELU(),
+        #     nn.Linear(hidden, hidden),
+        # )
 
-        self.low_mlp = nn.Sequential(
-            nn.LayerNorm(hidden),
-            nn.Linear(hidden, hidden),
-            nn.GELU()
-        )
+        # self.low_mlp = nn.Sequential(
+        #     nn.LayerNorm(hidden),
+        #     nn.Linear(hidden, hidden),
+        #     nn.GELU()
+        # )
 
-        self.high_mlp = nn.Sequential(
-            nn.LayerNorm(hidden),
-            nn.Linear(hidden, hidden),
-            nn.GELU()
-        )
+        # self.high_mlp = nn.Sequential(
+        #     nn.LayerNorm(hidden),
+        #     nn.Linear(hidden, hidden),
+        #     nn.GELU()
+        # )
 
         self.p1_head = nn.Sequential(
             nn.LayerNorm(hidden),
@@ -177,8 +136,8 @@ class Model(nn.Module):
         return (w * x).sum(dim=1)
 
     def forward(self, x, wl=[]):
-        x = self.attn_encoder(x, wl)
-        x = self.mlp(x)
+        x = self.attn_encoder(x)
+        # x = self.mlp(x)
 
         # Pooling
         beta_low = torch.relu(self.beta_low) + 1e-3
@@ -187,11 +146,11 @@ class Model(nn.Module):
         beta_low = beta_low.clamp(0.5, 20.0)
         beta_high = beta_high.clamp(0.5, 20.0)
 
-        x_low  = x + self.low_mlp(x)
-        x_low = self.soft_pool(x_low, q=-1, beta=beta_low)
+        # x_low  = x + self.low_mlp(x)
+        x_low = self.soft_pool(x, q=-1, beta=beta_low)
 
         x_high = x + self.high_mlp(x)
-        x_high = self.soft_pool(x_high, q=1, beta=beta_high)
+        x_high = self.soft_pool(x, q=1, beta=beta_high)
 
         # Targets
         low = self.p1_head(x_low)
