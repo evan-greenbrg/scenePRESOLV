@@ -129,7 +129,9 @@ class Model(nn.Module):
         x_max = self.soft_pool(x_high, .99)
 
         # Targets
-        low  = self.bounded_output(self.p1_head(x_min), 0.05, 5.5)
-        high = self.bounded_output(self.p2_head(x_max), 0.5, 6.0)
+        # low  = self.bounded_output(self.p1_head(x_min), 0.0, 7.0)
+        # high = self.bounded_output(self.p2_head(x_max), 0.0, 7.0)
+        low  = self.p1_head(x_min)
+        high = self.p2_head(x_max)
 
         return torch.cat([low, high], dim=1)
