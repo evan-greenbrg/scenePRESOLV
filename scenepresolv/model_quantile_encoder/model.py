@@ -98,13 +98,22 @@ class Model(nn.Module):
             nn.Linear(hidden, 1)
         )
 
+        self.beta_low = nn.Parameter(torch.tensor(1.0))
+        self.beta_high = nn.Parameter(torch.tensor(1.0))
+
     @staticmethod
     def bounded_output(x, low=0.04, high=6.0):
         return low + (high - low) * torch.sigmoid(x)
     
-    def soft_pool(self, x, q, beta=2.0):
+    def soft_pool(self, x, q, beta=5.0):
         scores = x.norm(dim=-1, keepdim=True)
-        w = torch.softmax((q * beta) * scores, dim=1)
+        scores = (
+            (scores - scores.mean(dim=1, keepdim=True))
+            / (scores.std(dim=1, keepdim=True) + 1e-6)
+        )
+        logits = q * beta * scores
+        logits = logits.clamp(-10, 10)
+        w = torch.softmax(logits, dim=1)
         return (w * x).sum(dim=1)
 
     def forward(self, x, wl=[]):
@@ -112,11 +121,17 @@ class Model(nn.Module):
         x = self.mlp(x)
 
         # Pooling
+        beta_low = torch.relu(self.beta_low) + 1e-3
+        beta_high = torch.relu(self.beta_high) + 1e-3
+
+        beta_low = beta_low.clamp(0.5, 20.0)
+        beta_high = beta_high.clamp(0.5, 20.0)
+
         x_low  = x + self.low_mlp(x)
-        x_low = x_low.min(dim=1).values
+        x_low = self.soft_pool(x_low, q=-1, beta=beta_low)
 
         x_high = x + self.high_mlp(x)
-        x_high = x_high.max(dim=1).values
+        x_high = self.soft_pool(x_high, q=1, beta=beta_high)
 
         # Targets
         low = self.p1_head(x_low)

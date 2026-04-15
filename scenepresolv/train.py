@@ -231,6 +231,7 @@ def train(
             {"params": model.low_mlp.parameters(), "lr": 2e-4},
             {"params": model.high_mlp.parameters(), "lr": 2e-4},
             {"params": model.attn_encoder.parameters(), "lr": 2e-3},
+            {"params": [model.beta_low, model.beta_high], "lr": 1e-2},
         ], weight_decay=1e-4)
 
         # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
