@@ -200,7 +200,7 @@ def train(
         )
 
         trainer = Trainer_p99(
-            quantiles=[.05, .95],
+            quantiles=[.01, .99],
             run=run
         )
 
