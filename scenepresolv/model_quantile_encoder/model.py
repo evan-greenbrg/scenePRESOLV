@@ -136,7 +136,9 @@ class Model(nn.Module):
         return (w * x).sum(dim=1)
 
     def forward(self, x, wl=[]):
-        x = self.attn_encoder(x)
+        b, s, n = x.shape
+        x = self.attn_encoder(x.view(b * s, n).unsqueeze(-1))
+        x = x.view(b, s, self.hidden)
         # x = self.mlp(x)
 
         # Pooling
