@@ -260,8 +260,8 @@ def train(
         model.train()
         train_epoch_total_loss = 0
 
-        accumulation_steps = 4  # effective batch = 32 * 4 = 128
-
+        # effective batch = 32 * step
+        accumulation_steps = 10  
         opt.zero_grad()
         for i, batch_ in enumerate(train_dataloader):
             x = batch_['toa'].to(device)

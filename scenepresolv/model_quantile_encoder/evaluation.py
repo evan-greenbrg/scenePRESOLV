@@ -30,7 +30,7 @@ def quantile_mape(pred, target):
 def evaluation(dataloader, model, device, loss_fn):
     all_pred = []
     all_target = []
-    wl = torch.tensor(dataloader.dataset.wl).type(float).to(device)
+    wl = torch.tensor(dataloader.dataset.wl).type(torch.float32).to(device)
     with torch.no_grad():
         for batch in dataloader:
             x = batch['toa'].to(device)
