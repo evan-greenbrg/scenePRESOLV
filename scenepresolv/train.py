@@ -211,12 +211,13 @@ def train(
         b = len(use_wl)
         model = Model_attn(b, hidden=256).to(device)
 
+        run.watch(model, log="all", log_freq=100)
+
         opt = torch.optim.AdamW([
-            {"params": model.p1_head.parameters(), "lr": 2e-4},
-            {"params": model.p2_head.parameters(), "lr": 2e-4},
-            {"params": model.mlp.parameters(), "lr": 1e-4},
-            {"params": model.attn_encoder.parameters(), "lr": 1e-4},
-            {"params": model.score.parameters(), "lr": 1e-4},
+            {"params": model.p1_head.parameters(), "lr": 1e-4},
+            {"params": model.p2_head.parameters(), "lr": 1e-4},
+            {"params": model.mlp.parameters(), "lr": 2e-4},
+            {"params": model.attn_encoder.parameters(), "lr": 3e-4},
         ], weight_decay=1e-4)
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -248,12 +249,14 @@ def train(
             x = batch_['toa'].to(device)
             target = batch_['atmosphere'].to(device)
 
-            loss, model, opt = trainer.step(
+            loss_low, loss_high, model, opt = trainer.step(
                 x, target, model, opt
             )
 
-            run.log({"train/total_loss": loss})
-            train_epoch_total_loss += loss
+            run.log({"train/total_loss": loss_low + loss_high})
+            run.log({"train/low_loss": loss_low})
+            run.log({"train/high_loss": loss_high})
+            train_epoch_total_loss += (loss_low + loss_high)
             train_epoch_total_loss /= len(train_dataloader)
 
         scheduler.step()

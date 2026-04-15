@@ -13,8 +13,8 @@ class Trainer:
         self.device = get_device()
 
         self.loss_fn = partial(
-            # pinball_loss,
-            mape_loss,
+            pinball_loss,
+            # mape_loss,
             quantiles=quantiles
         )
 
@@ -34,4 +34,4 @@ class Trainer:
         nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         opt.step()
 
-        return loss, model, opt
+        return loss_low, loss_high, model, opt
