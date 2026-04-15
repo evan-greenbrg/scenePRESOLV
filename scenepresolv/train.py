@@ -260,13 +260,21 @@ def train(
         model.train()
         train_epoch_total_loss = 0
 
-        for ite, batch_ in enumerate(train_dataloader):
+        accumulation_steps = 4  # effective batch = 32 * 4 = 128
+
+        opt.zero_grad()
+        for i, batch_ in enumerate(train_dataloader):
             x = batch_['toa'].to(device)
             target = batch_['atmosphere'].to(device)
 
-            loss_low, loss_high, model, opt = trainer.step(
-                x, target, model, opt
-            )
+            loss_low, loss_high = trainer.loss_fn(model(x, wl), target)
+            loss = (loss_low + loss_high) / accumulation_steps
+            loss.backward()
+
+            if (i + 1) % accumulation_steps == 0:
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                opt.step()
+                opt.zero_grad()
 
             run.log({"train/total_loss": loss_low + loss_high})
             run.log({"train/low_loss": loss_low})
