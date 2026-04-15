@@ -14,9 +14,12 @@ def evaluation(_dataloader, model, device, loss_fn):
     for idx, batch_ in enumerate(_dataloader):
         rdn = batch_['toa'].to(device)
         target = batch_['atmosphere'].to(device)
+        wl = torch.tensor(
+            _dataloader.dataset.wl
+        ).type(torch.float32).to(device)
 
         with torch.no_grad():
-            pred = model(rdn)
+            pred = model(rdn, wl)
 
         pred_cpu = pred.detach().cpu().numpy()
         target_cpu = target.detach().cpu().numpy()

@@ -225,9 +225,14 @@ def train(
             eta_min=1e-4,
         )
 
+        # TODO allow this to vary within batch?
+        wl = torch.tensor(
+            train_dataset.wl
+        ).type(torch.float32).to(device)
         trainer = Trainer_attn(
             quantiles=[.05, .95],
-            run=run
+            run=run,
+            wl=wl
         )
 
         evaluation = evaluation_attn
@@ -244,7 +249,7 @@ def train(
             target = batch_['atmosphere'].to(device)
 
             loss, model, opt = trainer.step(
-                x, target, model, opt
+                x, target, model, opt, wl
             )
 
             run.log({"train/total_loss": loss})

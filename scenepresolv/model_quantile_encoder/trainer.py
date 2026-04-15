@@ -8,7 +8,7 @@ from scenepresolv.utils import get_device
 
 
 class Trainer:
-    def __init__(self, quantiles, run):
+    def __init__(self, quantiles, run, wl):
 
         self.device = get_device()
 
@@ -20,8 +20,11 @@ class Trainer:
 
         self.run = run
 
+        # TODO allow this to vary within batch?
+        self.wl = wl
+
     def step(self, x, target, model, opt):
-        pred = model(x)
+        pred = model(x, self.wl)
 
         loss_low, loss_high = self.loss_fn(pred, target)
         loss = loss_low + loss_high
