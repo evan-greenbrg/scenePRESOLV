@@ -6,54 +6,53 @@ from sklearn.metrics import (
 )
 
 
-def evaluation(_dataloader, model, device, loss_fn):
-    train_true_p1 = []
-    train_pred_p1 = []
-    train_true_p2 = []
-    train_pred_p2 = []
-    for idx, batch_ in enumerate(_dataloader):
-        rdn = batch_['toa'].to(device)
-        target = batch_['atmosphere'].to(device)
-        wl = torch.tensor(
-            _dataloader.dataset.wl
-        ).type(torch.float32).to(device)
+def quantile_coverage(pred, target, quantiles=[0.01, 0.99]):
+    low_coverage  = (target[:, 0] < pred[:, 0]).float().mean()
+    high_coverage = (target[:, 1] > pred[:, 1]).float().mean()
+    return low_coverage.item(), high_coverage.item()
 
-        with torch.no_grad():
-            pred = model(rdn, wl)
 
-        pred_cpu = pred.detach().cpu().numpy()
-        target_cpu = target.detach().cpu().numpy()
+def interval_width(pred):
+    return (pred[:, 1] - pred[:, 0]).mean().item()
 
-        train_pred_p1 += list(pred_cpu[..., 0].flatten())
-        train_pred_p2 += list(pred_cpu[..., 1].flatten())
-        train_true_p1 += list(target_cpu[..., 0].flatten())
-        train_true_p2 += list(target_cpu[..., 1].flatten())
 
-    train_pred_p1 = np.array(train_pred_p1)
-    train_pred_p2 = np.array(train_pred_p2)
-    train_true_p1 = np.array(train_true_p1)
-    train_true_p2 = np.array(train_true_p2)
+def quantile_mape(pred, target):
+    mape_low = (
+        (pred[:, 0] - target[:, 0]).abs() / (target[:, 0].abs() + 1e-6)
+    ).mean()
+    mape_high = (
+        (pred[:, 1] - target[:, 1]).abs() / (target[:, 1].abs() + 1e-6)
+    ).mean()
 
-    train_r2_p1 = r2_score(
-        train_true_p1,
-        train_pred_p1
-    )
-    train_r2_p2 = r2_score(
-        train_true_p2,
-        train_pred_p2
-    )
-    train_mape_p1 = mean_absolute_percentage_error(
-        train_true_p1,
-        train_pred_p1
-    )
-    train_mape_p2 = mean_absolute_percentage_error(
-        train_true_p2,
-        train_pred_p2
-    )
+    return mape_low.item(), mape_high.item()
 
+
+def evaluation(dataloader, model, device, loss_fn, wl):
+    all_pred = []
+    all_target = []
+    
+    with torch.no_grad():
+        for batch in dataloader:
+            x = batch['toa'].to(device)
+            target = batch['atmosphere'].to(device)
+            pred = model(x, wl)
+            all_pred.append(pred.cpu())
+            all_target.append(target.cpu())
+    
+    pred = torch.cat(all_pred)
+    target = torch.cat(all_target)
+    
+    loss_low, loss_high = loss_fn(pred, target)
+    low_cov, high_cov = quantile_coverage(pred, target)
+    mape_low, mape_high = quantile_mape(pred, target)
+    width = interval_width(pred)
+    
     return {
-        "r2_p1": train_r2_p1,
-        "r2_p2": train_r2_p2,
-        "mape_p1": train_mape_p1,
-        "mape_p2": train_mape_p2
+        'loss_low': loss_low.item(),
+        'loss_high': loss_high.item(),
+        'coverage_low': low_cov,
+        'coverage_high': high_cov,
+        'mape_low': mape_low,
+        'mape_high': mape_high,
+        'interval_width': width,
     }
