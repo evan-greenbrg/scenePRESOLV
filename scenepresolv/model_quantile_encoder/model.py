@@ -14,7 +14,7 @@ class BandAttentionReducer(nn.Module):
         # Project each scalar band value to hidden dim
         self.band_proj = nn.Sequential(
             nn.Linear(1, hidden),
-            nn.GELU()
+            nn.Tanh()
         )
         
         # Project known wavelength (scalar) to hidden dim
@@ -53,7 +53,6 @@ class BandAttentionReducer(nn.Module):
         ).unsqueeze(0)
 
         tokens = tokens + wl_enc
-        tokens = tokens * (self.hidden ** 0.5)
         tokens = self.token_norm(tokens)
         
         # Cross-attend
@@ -116,11 +115,8 @@ class Model(nn.Module):
         x = self.mlp(x)
 
         # Pooling
-        beta_low = torch.relu(self.beta_low) + 1e-3
-        beta_high = torch.relu(self.beta_high) + 1e-3
-
-        beta_low = beta_low.clamp(0.5, 20.0)
-        beta_high = beta_high.clamp(0.5, 20.0)
+        beta_low  = nn.functional.softplus(self.beta_low) + 0.5
+        beta_high = nn.functional.softplus(self.beta_high) + 0.5
 
         x_low = self.soft_pool(x, q=-1, beta=beta_low)
         x_high = self.soft_pool(x, q=1, beta=beta_high)

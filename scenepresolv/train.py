@@ -228,10 +228,10 @@ def train(
         opt = torch.optim.AdamW([
             {"params": model.p1_head.parameters(), "lr": 1e-4},
             {"params": model.p2_head.parameters(), "lr": 1e-4},
-            # {"params": model.mlp.parameters(), "lr": 2e-4},
+            {"params": model.mlp.parameters(), "lr": 2e-4},
             # {"params": model.low_mlp.parameters(), "lr": 2e-4},
             # {"params": model.high_mlp.parameters(), "lr": 2e-4},
-            {"params": model.attn_encoder.parameters(), "lr": 3e-3},
+            {"params": model.attn_encoder.parameters(), "lr": 3e-4},
             {"params": [model.beta_low, model.beta_high], "lr": 1e-2},
         ], weight_decay=1e-4)
 
