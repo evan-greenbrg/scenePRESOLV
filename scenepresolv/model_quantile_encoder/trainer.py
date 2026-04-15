@@ -3,7 +3,7 @@ from functools import partial
 import torch
 from torch import nn
 
-from scenepresolv.model_quantile_encoder.loss import pinball_loss, mape_loss
+from scenepresolv.model_quantile_encoder.loss import pinball_loss, mape_loss, log_loss, mse_loss
 from scenepresolv.utils import get_device
 
 
@@ -13,8 +13,9 @@ class Trainer:
         self.device = get_device()
 
         self.loss_fn = partial(
-            # pinball_loss,
-            mape_loss,
+            pinball_loss,
+            # mape_loss,
+            # mse_loss,
             quantiles=quantiles
         )
 

@@ -220,7 +220,7 @@ def train(
         model = Model_attn(b, hidden=256).to(device)
 
         model.apply(init_weights)
-        nn.init.xavier_uniform_(model.attn_encoder.readout)
+        # nn.init.xavier_uniform_(model.attn_encoder.readout)
 
         run.watch(model, log="all", log_freq=100)
 
@@ -230,15 +230,15 @@ def train(
             {"params": model.mlp.parameters(), "lr": 2e-4},
             {"params": model.low_mlp.parameters(), "lr": 2e-4},
             {"params": model.high_mlp.parameters(), "lr": 2e-4},
-            {"params": model.attn_encoder.parameters(), "lr": 2e-3},
+            {"params": model.attn_encoder.parameters(), "lr": 3e-3},
             {"params": [model.beta_low, model.beta_high], "lr": 1e-2},
         ], weight_decay=1e-4)
 
-        # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        #     opt,
-        #     T_max=epochs,
-        #     eta_min=1e-4,
-        # )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt,
+            T_max=epochs,
+            eta_min=1e-4,
+        )
 
         # TODO allow this to vary within batch?
         wl = torch.tensor(
@@ -273,7 +273,7 @@ def train(
             train_epoch_total_loss += (loss_low + loss_high)
             train_epoch_total_loss /= len(train_dataloader)
 
-        # scheduler.step()
+        scheduler.step()
         model.eval()
         run.log({"train/epoch_total_loss": train_epoch_total_loss})
         train_eval_dict = evaluation(

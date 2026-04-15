@@ -29,7 +29,8 @@ class BandAttentionReducer(nn.Module):
             num_heads=nheads,
             batch_first=True
         )
-        self.norm = nn.LayerNorm(hidden)
+        self.token_norm = nn.LayerNorm(hidden)
+        self.out_norm = nn.LayerNorm(hidden)
 
         self.wl_mean = 1440
         self.wl_std = 600
@@ -50,14 +51,73 @@ class BandAttentionReducer(nn.Module):
         wl_enc = self.wavelength_proj(
             wl_norm.view(-1, 1)
         ).unsqueeze(0)
-        tokens= tokens + wl_enc
+
+        tokens = tokens + wl_enc
+        tokens = tokens * (self.hidden ** 0.5)
+        tokens = self.token_norm(tokens)
         
         # Cross-attend
         query = self.readout.expand(batch * samples, -1, -1)
         out, _ = self.cross_attn(query, tokens, tokens)
-        out = self.norm(out.squeeze(1))
+        # Residual connection
+        out = query + out
+        out = self.out_norm(out.squeeze(1))
         
         return out.view(batch, samples, self.hidden)
+
+
+class SetPool(nn.Module):
+    def __init__(self, hidden):
+        super().__init__()
+        self.query = nn.Parameter(torch.randn(1, 1, hidden))
+        self.attn = nn.MultiheadAttention(hidden, 4, batch_first=True)
+
+    def forward(self, x):
+        q = self.query.expand(x.size(0), -1, -1)
+        out, _ = self.attn(q, x, x)
+        return out.squeeze(1)# 
+
+
+class BandSetModel(nn.Module):
+    def __init__(self, hidden=256):
+        super().__init__()
+
+        self.band_proj = nn.Linear(1, hidden)
+        self.wl_proj = nn.Linear(1, hidden)
+
+        self.token_norm = nn.LayerNorm(hidden)
+
+        self.self_attn = nn.MultiheadAttention(hidden, 4, batch_first=True)
+        self.attn_norm = nn.LayerNorm(hidden)
+
+    def forward(self, x, wl):
+        B, S, bands = x.shape
+
+        x = x.view(B*S, bands, 1)
+
+        wl = (wl - wl.mean()) / (wl.std() + 1e-6)
+        wl = self.wl_proj(wl[:, None]).unsqueeze(0)
+
+        tokens = self.band_proj(x) + wl
+        tokens = self.token_norm(tokens)
+
+        h, _ = self.self_attn(tokens, tokens, tokens)
+        tokens = self.attn_norm(tokens + h)
+
+        return tokens.view(B, S, -1)
+
+
+class SamplePool(nn.Module):
+    def __init__(self, hidden):
+        super().__init__()
+        self.query = nn.Parameter(torch.randn(1, 1, hidden))
+        self.attn = nn.MultiheadAttention(hidden, 4, batch_first=True)
+
+    def forward(self, x):
+        # x: (B, S, H)
+        q = self.query.expand(x.size(0), -1, -1)
+        out, _ = self.attn(q, x, x)
+        return out.squeeze(1)
 
 
 class Model(nn.Module):
@@ -74,7 +134,6 @@ class Model(nn.Module):
             nn.GELU(),
             nn.Linear(hidden, hidden),
         )
-
         self.attn_encoder = BandAttentionReducer(hidden)
 
         self.low_mlp = nn.Sequential(
@@ -114,6 +173,7 @@ class Model(nn.Module):
         logits = q * beta * scores
         logits = logits.clamp(-10, 10)
         w = torch.softmax(logits, dim=1)
+
         return (w * x).sum(dim=1)
 
     def forward(self, x, wl=[]):
@@ -136,6 +196,6 @@ class Model(nn.Module):
         # Targets
         low = self.p1_head(x_low)
         delta = self.p2_head(x_high)
-        high = low.detach() + delta
+        high = low + delta
 
         return torch.cat([low, high], dim=1)
