@@ -10,13 +10,12 @@ class BandAttentionReducer(nn.Module):
         self.hidden = hidden
         
         # Project each scalar band value to hidden dim
-        # self.band_proj = nn.Sequential(
-        #     nn.Linear(1, hidden),
-        #     nn.GELU()
-        # )
-        self.band_proj = nn.Linear(1, hidden)
-        nn.init.normal_(self.band_proj.weight, std=0.02)
-        nn.init.zeros_(self.band_proj.bias)
+        self.band_proj = nn.Sequential(
+            nn.Linear(1, hidden),
+            nn.GELU()
+        )
+        # nn.init.normal_(self.band_proj.Linear.weight, std=0.02)
+        # nn.init.zeros_(self.band_proj.Linear.bias)
         
         # Project known wavelength (scalar) to hidden dim
         self.wavelength_proj = nn.Linear(1, hidden)
@@ -55,9 +54,6 @@ class BandAttentionReducer(nn.Module):
         query = self.readout.expand(batch * samples, -1, -1)
         out, _ = self.cross_attn(query, tokens, tokens)
         out = self.norm(out.squeeze(1))
-
-        # Add gain
-        out = out * 5.0
         
         return out.view(batch, samples, self.hidden)
 
@@ -79,30 +75,30 @@ class Model(nn.Module):
 
         self.attn_encoder = BandAttentionReducer(hidden)
 
-        self.low_mlp = nn.Sequential(
-            nn.LayerNorm(hidden),
-            nn.Linear(hidden, hidden),
-            nn.GELU()
-        )
+        # self.low_mlp = nn.Sequential(
+        #     nn.LayerNorm(hidden),
+        #     nn.Linear(hidden, hidden),
+        #     nn.GELU()
+        # )
 
-        self.high_mlp = nn.Sequential(
-            nn.LayerNorm(hidden),
-            nn.Linear(hidden, hidden),
-            nn.GELU()
-        )
+        # self.high_mlp = nn.Sequential(
+        #     nn.LayerNorm(hidden),
+        #     nn.Linear(hidden, hidden),
+        #     nn.GELU()
+        # )
 
         self.p1_head = nn.Sequential(
             nn.LayerNorm(hidden),
-            nn.Linear(hidden, 1),
-            nn.GELU(),
-            nn.Linear(1, 1),
+            nn.Linear(hidden, 1)
         )
         self.p2_head = nn.Sequential(
             nn.LayerNorm(hidden),
-            nn.Linear(hidden, 1),
-            nn.GELU(),
-            nn.Linear(1, 1),
+            nn.Linear(hidden, 1)
         )
+
+        self.q_queries = nn.Parameter(torch.randn(2, hidden))
+        self.hidden = hidden
+
 
     @staticmethod
     def bounded_output(x, low=0.04, high=6.0):
@@ -113,20 +109,30 @@ class Model(nn.Module):
         w = torch.softmax((q * beta) * scores, dim=1)
         return (w * x).sum(dim=1)
 
+    def quantile_pool(self, x):
+        # x: (batch, n, hidden)
+        q = self.q_queries.unsqueeze(0).expand(x.shape[0], -1, -1)
+        scores = torch.bmm(q, x.transpose(1, 2)) / (self.hidden ** 0.5)
+        w = torch.softmax(scores, dim=-1)
+        pooled = torch.bmm(w, x)
+        return pooled[:, 0], pooled[:, 1]
+
     def forward(self, x, wl=[]):
         x = self.attn_encoder(x, wl)
         x = self.mlp(x)
 
-        x_mean = x.mean(dim=1, keepdim=True)
-        x = x + 0.5 * x_mean
+        # x_mean = x.mean(dim=1, keepdim=True)
+        # x = x + 0.5 * x_mean
 
-        x_low  = x + self.low_mlp(x)
-        x_high = x + self.high_mlp(x)
+        # x_low  = x + self.low_mlp(x)
+        # x_high = x + self.high_mlp(x)
+
+        x_min, x_max = self.quantile_pool(x)
 
         # Low aggregation
-        x_min = self.soft_pool(x_low, -.99)
-        # High aggregation
-        x_max = self.soft_pool(x_high, .99)
+        # x_min = self.soft_pool(x_low, -.99)
+        # # High aggregation
+        # x_max = self.soft_pool(x_high, .99)
 
         # Targets
         # low  = self.bounded_output(self.p1_head(x_min), 0.0, 7.0)
