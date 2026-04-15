@@ -91,15 +91,15 @@ class Model(nn.Module):
         self.log_var_high = nn.Parameter(torch.tensor(0.0))
 
         # May not end up keeping this. A shared learnable weight
-        self.score = nn.Linear(hidden, 1)
+        # self.score = nn.Linear(hidden, 1)
 
     @staticmethod
     def bounded_output(x, low=0.04, high=6.0):
         return low + (high - low) * torch.sigmoid(x)
     
     def soft_pool(self, x, q, beta=10.0):
-        # scores = x.norm(dim=-1, keepdim=True)
-        scores = self.score(x)
+        scores = x.norm(dim=-1, keepdim=True)
+        # scores = self.score(x)
         w = torch.softmax((q * beta) * scores, dim=1)
         return (w * x).sum(dim=1)
 
