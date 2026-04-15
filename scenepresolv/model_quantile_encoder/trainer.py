@@ -3,7 +3,7 @@ from functools import partial
 import torch
 from torch import nn
 
-from scenepresolv.model_p01_p99.loss import pinball_loss, mape_loss
+from scenepresolv.model_quantile_encoder.loss import pinball_loss, mape_loss
 from scenepresolv.utils import get_device
 
 
