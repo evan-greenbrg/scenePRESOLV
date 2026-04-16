@@ -14,7 +14,7 @@ class BandAttentionReducer(nn.Module):
         # Project each scalar band value to hidden dim
         self.band_proj = nn.Sequential(
             nn.Linear(1, hidden),
-            nn.Tanh()
+            nn.GELU()
         )
         
         # Project known wavelength (scalar) to hidden dim
@@ -53,6 +53,7 @@ class BandAttentionReducer(nn.Module):
         ).unsqueeze(0)
 
         tokens = tokens + wl_enc
+        tokens = tokens * (self.hidden ** 0.5)
         tokens = self.token_norm(tokens)
         
         # Cross-attend
@@ -89,15 +90,20 @@ class Model(nn.Module):
         self.p2_head = nn.Sequential(
             nn.LayerNorm(hidden),
             nn.Linear(hidden, 1)
+            nn.GELU(),
+            nn.Linear(1, 1)
+        )
+
+        self.p2_mlp = nn.Sequential(
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, hidden),
         )
 
         self.beta_low = nn.Parameter(torch.tensor(1.0))
         self.beta_high = nn.Parameter(torch.tensor(1.0))
 
-    @staticmethod
-    def bounded_output(x, low=0.04, high=6.0):
-        return low + (high - low) * torch.sigmoid(x)
-    
     def soft_pool(self, x, q, beta=5.0):
         scores = x.norm(dim=-1, keepdim=True)
         scores = (
@@ -115,11 +121,18 @@ class Model(nn.Module):
         x = self.mlp(x)
 
         # Pooling
-        beta_low  = nn.functional.softplus(self.beta_low) + 0.5
-        beta_high = nn.functional.softplus(self.beta_high) + 0.5
+        beta_low = torch.relu(self.beta_low) + 1e-3
+        beta_high = torch.relu(self.beta_high) + 1e-3
+
+        beta_low = beta_low.clamp(0.5, 20.0)
+        beta_high = beta_high.clamp(0.5, 20.0)
 
         x_low = self.soft_pool(x, q=-1, beta=beta_low)
-        x_high = self.soft_pool(x, q=1, beta=beta_high)
+        x_high = self.soft_pool(
+            x + self.p2_mlp(x),
+            q=1,
+            beta=beta_high
+        )
 
         # Targets
         low = self.p1_head(x_low)
