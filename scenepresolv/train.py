@@ -226,19 +226,18 @@ def train(
         run.watch(model, log="all", log_freq=100)
 
         opt = torch.optim.AdamW([
-            {"params": model.p1_head.parameters(), "lr": 1e-4},
-            {"params": model.p2_head.parameters(), "lr": 1e-4},
-            {"params": model.mlp.parameters(), "lr": 2e-4},
-            # {"params": model.low_mlp.parameters(), "lr": 2e-4},
-            # {"params": model.high_mlp.parameters(), "lr": 2e-4},
-            {"params": model.attn_encoder.parameters(), "lr": 3e-4},
-            {"params": [model.beta_low, model.beta_high], "lr": 1e-2},
+            {"params": model.p1_head.parameters(), "lr": 5e-5},
+            {"params": model.p2_head.parameters(), "lr": 5e-5},
+            {"params": model.mlp.parameters(), "lr": 5e-5},
+            {"params": model.attn_encoder.parameters(), "lr": 5e-5},
+            {"params": [model.beta_low, model.beta_high], "lr": 1e-3},
         ], weight_decay=1e-4)
 
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             opt,
-            T_max=epochs,
-            eta_min=1e-4,
+            patience=3,
+            factor=0.5,
+            min_lr=1e-6
         )
 
         # TODO allow this to vary within batch?
@@ -279,10 +278,12 @@ def train(
             run.log({"train/total_loss": loss_low + loss_high})
             run.log({"train/low_loss": loss_low})
             run.log({"train/high_loss": loss_high})
+
+            run.log({"train/beta_low": model.beta_low.item()})
+            run.log({"train/beta_high": model.beta_high.item()})
             train_epoch_total_loss += (loss_low + loss_high)
             train_epoch_total_loss /= len(train_dataloader)
 
-        scheduler.step()
         model.eval()
         run.log({"train/epoch_total_loss": train_epoch_total_loss})
         train_eval_dict = evaluation(
@@ -294,6 +295,7 @@ def train(
         test_eval_dict = evaluation(
             test_dataloader, model, device, trainer.loss_fn,
         )
+        scheduler.step(test_eval_dict['loss_high'])
         for key, value in test_eval_dict.items():
             run.log({f"test/{key}": value})
         run.log({"epoch": epoch})

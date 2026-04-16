@@ -88,21 +88,14 @@ class Model(nn.Module):
             nn.Linear(hidden, 1)
         )
         self.p2_head = nn.Sequential(
-            nn.LayerNorm(hidden),
+            nn.LayerNorm(hidden * 2),
+            nn.Linear(hidden * 2, hidden),
+            nn.GELU(),
             nn.Linear(hidden, 1)
-            nn.GELU(),
-            nn.Linear(1, 1)
         )
 
-        self.p2_mlp = nn.Sequential(
-            nn.LayerNorm(hidden),
-            nn.Linear(hidden, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, hidden),
-        )
-
-        self.beta_low = nn.Parameter(torch.tensor(1.0))
-        self.beta_high = nn.Parameter(torch.tensor(1.0))
+        self.beta_low = nn.Parameter(torch.tensor(9.0))
+        self.beta_high = nn.Parameter(torch.tensor(9.0))
 
     def soft_pool(self, x, q, beta=5.0):
         scores = x.norm(dim=-1, keepdim=True)
@@ -128,14 +121,15 @@ class Model(nn.Module):
         beta_high = beta_high.clamp(0.5, 20.0)
 
         x_low = self.soft_pool(x, q=-1, beta=beta_low)
-        x_high = self.soft_pool(
-            x + self.p2_mlp(x),
-            q=1,
-            beta=beta_high
-        )
+        x_high = self.soft_pool(x, q=1, beta=beta_high)
+
+        x_max = self.soft_pool(x, q=1,  beta=beta_high)
+        x_mean = x.mean(dim=1)
+        x_high = torch.cat([x_max, x_mean], dim=-1)
 
         # Targets
         low = self.p1_head(x_low)
-        high = self.p2_head(x_high)
+        # high = self.p2_head(x_high)
+        high = low + nn.functional.softplus(self.p2_head(x_high)) + 1e-2
 
         return torch.cat([low, high], dim=1)
