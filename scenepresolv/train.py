@@ -260,7 +260,7 @@ def train(
         train_epoch_total_loss = 0
 
         # effective batch = 32 * step
-        accumulation_steps = 10  
+        accumulation_steps = 4
         opt.zero_grad()
         for i, batch_ in enumerate(train_dataloader):
             x = batch_['toa'].to(device)
@@ -271,7 +271,7 @@ def train(
             loss.backward()
 
             if (i + 1) % accumulation_steps == 0:
-                nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
                 opt.step()
                 opt.zero_grad()
 
