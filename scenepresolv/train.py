@@ -116,7 +116,7 @@ def train(
         file_to_list(train_obs_path),
         nsamples=nsamples,
         wl_grid=wavelength_grid,
-        target_fun=model,
+        target_fun='p99',
         cache_cube=True,
         save_to_disk=True,
         cache_root=os.path.join(
@@ -136,7 +136,7 @@ def train(
         file_to_list(test_obs_path),
         nsamples=nsamples,
         wl_grid=wavelength_grid,
-        target_fun=model,
+        target_fun='p99',
         cache_cube=True,
         save_to_disk=True,
         cache_root=os.path.join(
