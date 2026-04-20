@@ -116,7 +116,7 @@ def train(
         file_to_list(train_obs_path),
         nsamples=nsamples,
         wl_grid=wavelength_grid,
-        target_fun='p99',
+        target_fun='IQR',
         cache_cube=True,
         save_to_disk=True,
         cache_root=os.path.join(
@@ -136,7 +136,7 @@ def train(
         file_to_list(test_obs_path),
         nsamples=nsamples,
         wl_grid=wavelength_grid,
-        target_fun='p99',
+        target_fun='IQR',
         cache_cube=True,
         save_to_disk=True,
         cache_root=os.path.join(
@@ -218,7 +218,7 @@ def train(
         use_wl = train_dataset.wl
         b = len(use_wl)
         banddef = torch.tensor(use_wl, dtype=torch.float32).to(device)
-        model = Model_attn(banddef, hidden=256).to(device)
+        model = Model_attn(banddef, hidden=64).to(device)
 
         model.apply(init_weights)
         # nn.init.xavier_uniform_(model.attn_encoder.readout)
@@ -226,11 +226,11 @@ def train(
         run.watch(model, log="all", log_freq=100)
 
         opt = torch.optim.AdamW([
-            {"params": model.p1_head.parameters(), "lr": 5e-5},
-            {"params": model.p2_head.parameters(), "lr": 5e-5},
-            {"params": model.mlp.parameters(), "lr": 5e-5},
-            {"params": model.attn_encoder.parameters(), "lr": 5e-5},
-            {"params": [model.beta_low, model.beta_high], "lr": 1e-3},
+            {"params": model.p1_head.parameters(), "lr": 5e-4},
+            {"params": model.p2_head.parameters(), "lr": 1e-4},
+            {"params": model.mlp.parameters(), "lr": 5e-4},
+            {"params": model.attn_encoder.parameters(), "lr": 5e-4},
+            {"params": [model.beta_low, model.beta_high], "lr": 5e-3},
         ], weight_decay=1e-4)
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -244,8 +244,9 @@ def train(
         wl = torch.tensor(
             train_dataset.wl
         ).type(torch.float32).to(device)
+
         trainer = Trainer_attn(
-            quantiles=[.05, .95],
+            quantiles=[.25, .75],
             run=run,
             wl=wl
         )
@@ -283,6 +284,18 @@ def train(
             run.log({"train/beta_high": model.beta_high.item()})
             train_epoch_total_loss += (loss_low + loss_high)
             train_epoch_total_loss /= len(train_dataloader)
+
+        model.eval()
+        run.log({"train/epoch_total_loss": train_epoch_total_loss})
+        train_eval_dict = evaluation(
+            train_dataloader, model, device, trainer.loss_fn
+        )
+        for key, value in train_eval_dict.items():
+            run.log({f"train/{key}": value})
+
+        test_eval_dict = evaluation(
+            test_dataloader, model, device, trainer.loss_fn,
+        )
 
         model.eval()
         run.log({"train/epoch_total_loss": train_epoch_total_loss})

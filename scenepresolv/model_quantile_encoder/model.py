@@ -13,8 +13,8 @@ class BandAttentionReducer(nn.Module):
         
         # Project each scalar band value to hidden dim
         self.band_proj = nn.Sequential(
-            nn.Linear(1, hidden),
-            nn.GELU()
+            nn.Linear(1, hidden, bias=False),
+            nn.Tanh()
         )
         
         # Project known wavelength (scalar) to hidden dim
@@ -77,21 +77,20 @@ class Model(nn.Module):
         self.hidden = hidden
         self.attn_encoder = BandAttentionReducer(hidden)
         self.mlp = nn.Sequential(
-            nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden),
             nn.GELU(),
             nn.Linear(hidden, hidden),
         )
 
         self.p1_head = nn.Sequential(
-            nn.LayerNorm(hidden * 2),
-            nn.Linear(hidden * 2, hidden),
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden2, hidden),
             nn.GELU(),
             nn.Linear(hidden, 1)
         )
         self.p2_head = nn.Sequential(
-            nn.LayerNorm(hidden * 2),
-            nn.Linear(hidden * 2, hidden),
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, hidden),
             nn.GELU(),
             nn.Linear(hidden, 1)
         )
@@ -124,11 +123,11 @@ class Model(nn.Module):
 
         x_mean = x.mean(dim=1)
 
-        x_min= self.soft_pool(x, q=-1, beta=beta_low)
-        x_low= torch.cat([x_min, x_mean], dim=-1)
+        x_low = self.soft_pool(x, q=-1, beta=beta_low)
+        # x_low = torch.cat([x_min, x_mean], dim=-1)
 
-        x_max = self.soft_pool(x, q=1,  beta=beta_high)
-        x_high = torch.cat([x_max, x_mean], dim=-1)
+        x_high = self.soft_pool(x, q=1,  beta=beta_high)
+        # x_high = torch.cat([x_max, x_mean], dim=-1)
 
         # Targets
         low = self.p1_head(x_low)
