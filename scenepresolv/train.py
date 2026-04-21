@@ -270,6 +270,10 @@ def train(
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
             opt.step()
+
+            if i == len(train_dataloader) - 1:
+                gradient_summary(model)
+
             opt.zero_grad()
 
             run.log({"train/total_loss": loss_low + loss_high})
@@ -311,8 +315,6 @@ def train(
             model.state_dict(),
             os.path.join(outdir, f"spectf_presolve_{timestamp}.pt")
         )
-
-    gradient_summary(model)
     run.finish()
 
 
