@@ -146,7 +146,7 @@ class ImageDataset(Dataset):
                 self.toa_cube = toa_cube
                 self.atm_cube = atm_cube
 
-    def build_cube(self, cache_root, save_to_disk=True):
+    def build_cube(self, cache_root, save_to_disk=True, units='TOA'):
         if cache_root and save_to_disk:
             cache_root = Path(cache_root)
             toa_name = f"{cache_root.stem}_toa.npy"
@@ -196,13 +196,18 @@ class ImageDataset(Dataset):
                 self.wl, self.fwhm
             )
 
-            # toa_cube[idx, ...] = rdn_sample
-            toa_cube[idx, ...] = rdn_to_toa(
-                rdn_sample,
-                obs[row, col, 4],
-                self.irr,
-                self.esd[int(dayofyear) - 1, 1],
-            )
+            if units == 'Radiance':
+                toa_cube[idx, ...] = rdn_sample
+            elif units == 'TOA':
+                toa_cube[idx, ...] = rdn_to_toa(
+                    rdn_sample,
+                    obs[row, col, 4],
+                    self.irr,
+                    self.esd[int(dayofyear) - 1, 1],
+                )
+            else:
+                raise ValueError("Unit mode not valid")
+
             atm_cube[idx, ...] = self.target_fun(atm[..., atm_idx])
 
         # Save cubes

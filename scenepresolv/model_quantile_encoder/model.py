@@ -18,7 +18,7 @@ class BandAttentionReducer(nn.Module):
         )
         
         # Project known wavelength (scalar) to hidden dim
-        self.wavelength_proj = nn.Linear(1, hidden)
+        self.wavelength_proj = nn.Linear(1, hidden, bias=False)
         
         # Cross-attention readout
         self.readout = nn.Parameter(torch.randn(1, 1, hidden))
@@ -53,7 +53,6 @@ class BandAttentionReducer(nn.Module):
         ).unsqueeze(0)
 
         tokens = tokens + wl_enc
-        tokens = tokens * (self.hidden ** 0.5)
         tokens = self.token_norm(tokens)
         
         # Cross-attend
@@ -84,7 +83,7 @@ class Model(nn.Module):
 
         self.p1_head = nn.Sequential(
             nn.LayerNorm(hidden),
-            nn.Linear(hidden2, hidden),
+            nn.Linear(hidden, hidden),
             nn.GELU(),
             nn.Linear(hidden, 1)
         )
@@ -115,13 +114,10 @@ class Model(nn.Module):
         x = self.mlp(x)
 
         # Pooling
-        beta_low = torch.relu(self.beta_low) + 1e-3
-        beta_high = torch.relu(self.beta_high) + 1e-3
+        beta_low  = nn.functional.softplus(self.beta_low) + 0.5
+        beta_high = nn.functional.softplus(self.beta_high) + 0.5
 
-        beta_low = beta_low.clamp(0.5, 20.0)
-        beta_high = beta_high.clamp(0.5, 20.0)
-
-        x_mean = x.mean(dim=1)
+        # x_mean = x.mean(dim=1)
 
         x_low = self.soft_pool(x, q=-1, beta=beta_low)
         # x_low = torch.cat([x_min, x_mean], dim=-1)
