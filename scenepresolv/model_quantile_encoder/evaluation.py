@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from torch import nn
 from sklearn.metrics import (
     r2_score,
     mean_absolute_percentage_error
