@@ -94,8 +94,8 @@ class Model(nn.Module):
             nn.Linear(hidden, 1)
         )
 
-        self.beta_low = nn.Parameter(torch.tensor(9.0))
-        self.beta_high = nn.Parameter(torch.tensor(9.0))
+        self.beta_low = nn.Parameter(torch.tensor(2.0))
+        self.beta_high = nn.Parameter(torch.tensor(2.0))
 
     def soft_pool(self, x, q, beta=5.0):
         scores = x.norm(dim=-1, keepdim=True)

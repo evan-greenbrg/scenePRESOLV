@@ -231,7 +231,7 @@ def train(
             {"params": model.mlp.parameters(), "lr": 1e-4},
             {"params": model.attn_encoder.parameters(), "lr": 5e-5},
             {"params": [model.beta_low, model.beta_high], "lr": 1e-3},
-        ])
+        ], weight_decay=1e-4)
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             opt,
@@ -279,19 +279,8 @@ def train(
             run.log({"train/beta_low": model.beta_low.item()})
             run.log({"train/beta_high": model.beta_high.item()})
             train_epoch_total_loss += (loss_low + loss_high)
-            train_epoch_total_loss /= len(train_dataloader)
 
-        model.eval()
-        run.log({"train/epoch_total_loss": train_epoch_total_loss})
-        train_eval_dict = evaluation(
-            train_dataloader, model, device, trainer.loss_fn
-        )
-        for key, value in train_eval_dict.items():
-            run.log({f"train/{key}": value})
-
-        test_eval_dict = evaluation(
-            test_dataloader, model, device, trainer.loss_fn,
-        )
+        train_epoch_total_loss /= len(train_dataloader)
 
         model.eval()
         run.log({"train/epoch_total_loss": train_epoch_total_loss})
