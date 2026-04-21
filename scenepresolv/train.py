@@ -219,18 +219,14 @@ def train(
         b = len(use_wl)
         banddef = torch.tensor(use_wl, dtype=torch.float32).to(device)
         model = Model_attn(banddef, hidden=128).to(device)
-
         model.apply(init_weights)
-        # nn.init.xavier_uniform_(model.attn_encoder.readout)
-
-        run.watch(model, log="all", log_freq=100)
 
         opt = torch.optim.AdamW([
             {"params": model.p1_head.parameters(), "lr": 1e-4},
-            {"params": model.p2_head.parameters(), "lr": 2e-4},
-            {"params": model.mlp.parameters(), "lr": 1e-4},
-            {"params": model.attn_encoder.parameters(), "lr": 5e-5},
-            {"params": [model.beta_low, model.beta_high], "lr": 1e-3},
+            {"params": model.p2_head.parameters(), "lr": 1e-4},
+            {"params": model.mlp.parameters(), "lr": 5e-4},
+            {"params": model.attn_encoder.parameters(), "lr": 1e-3},
+            {"params": [model.beta_low, model.beta_high], "lr": 5e-3},
         ], weight_decay=1e-4)
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(

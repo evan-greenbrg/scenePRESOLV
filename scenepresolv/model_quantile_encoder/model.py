@@ -117,16 +117,21 @@ class Model(nn.Module):
         beta_low  = nn.functional.softplus(self.beta_low) + 0.5
         beta_high = nn.functional.softplus(self.beta_high) + 0.5
 
-        # x_mean = x.mean(dim=1)
+        x_mean = x.mean(dim=1)
+        # x_low = self.soft_pool(
+        #     x,
+        #     q=-1, beta=beta_low
+        # )
+        # # x_low = torch.cat([x_min, x_mean], dim=-1)
 
-        x_low = self.soft_pool(x, q=-1, beta=beta_low)
-        # x_low = torch.cat([x_min, x_mean], dim=-1)
-
-        x_high = self.soft_pool(x, q=1,  beta=beta_high)
+        # x_high = self.soft_pool(
+        #     x,
+        #     q=1,  beta=beta_high
+        # )
         # x_high = torch.cat([x_max, x_mean], dim=-1)
 
         # Targets
-        low = self.p1_head(x_low)
-        high = self.p2_head(x_high)
+        low = self.p1_head(x_mean)
+        high = self.p2_head(x_mean)
 
         return torch.cat([low, high], dim=1)
