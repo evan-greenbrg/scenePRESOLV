@@ -27,9 +27,25 @@ def quantile_mape(pred, target):
     return mape_low.item(), mape_high.item()
 
 
+def attn_similarity(model, x, wl):
+    """
+    If similarity is >0.9 or norm std is near zero,
+    the encoder is collapsing all samples to similar representations 
+    regardless of their spectral content.
+    """
+    with torch.no_grad():
+        emb = model.attn_encoder(x, wl)
+        sim = nn.functional.cosine_similarity(
+            emb[:, :, None], emb[:, None, :], dim=-1
+        )
+        return sim.mean().item(), emb.norm(dim=-1).std().item()
+
+
 def evaluation(dataloader, model, device, loss_fn):
     all_pred = []
     all_target = []
+    similarities = []
+    emb_norms = []
     wl = torch.tensor(dataloader.dataset.wl).type(torch.float32).to(device)
     with torch.no_grad():
         for batch in dataloader:
@@ -38,6 +54,10 @@ def evaluation(dataloader, model, device, loss_fn):
             pred = model(x, wl)
             all_pred.append(pred.cpu())
             all_target.append(target.cpu())
+
+            similarity, emb_norm = attn_similarity(model, x, wl)
+            similarities.append(similarity)
+            emb_norms.append(emb_norm)
     
     pred = torch.cat(all_pred)
     target = torch.cat(all_target)
@@ -55,4 +75,6 @@ def evaluation(dataloader, model, device, loss_fn):
         'mape_low': mape_low,
         'mape_high': mape_high,
         'interval_width': width,
+        'similarity': np.mean(similarities),
+        'attention_embed_norm': np.mean(emb_norms)
     }
