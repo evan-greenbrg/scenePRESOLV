@@ -311,9 +311,6 @@ class ImageDataset(Dataset):
     def __len__(self):
         return len(self.index)
 
-    def get_cached(self, idx):
-        pass
-
     def __getitem__(self, idx):
         return self.get(idx)
 
@@ -331,12 +328,19 @@ class ImageDataset(Dataset):
             i for i in range(len(atm.metadata['band names']))
             if atm.metadata['band names'][i] in self.h2o_names
         ][0]
+        spacecraft_idx = [
+            i for i in range(len(atm.metadata['band names']))
+            if atm.metadata['band names'][i] == 'Spacecraft Flag'
+        ][0]
 
         atm = atm.open_memmap(interleave='bip')
         obs = envi.open(envi_header(self.obs_paths[idx])).open_memmap(
             interleave='bip')
 
-        row, col = self.row_cols[idx]
+        # row, col = self.row_cols[idx]
+        row, col, iters = self.sample_rowcol(
+            atm, h2o_idx, spacecraft_idx
+        )
         rdn_sample = resample_spectrum(
             rdn[row, col, :].copy(),
             wl,
