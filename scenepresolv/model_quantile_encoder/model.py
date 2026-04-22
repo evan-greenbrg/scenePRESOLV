@@ -14,7 +14,7 @@ class BandAttentionReducer(nn.Module):
         # Project each scalar band value to hidden dim
         self.band_proj = nn.Sequential(
             nn.Linear(1, hidden, bias=False),
-            nn.Tanh()
+            nn.GELU()
         )
         
         # Project known wavelength (scalar) to hidden dim
@@ -31,6 +31,8 @@ class BandAttentionReducer(nn.Module):
         )
         self.token_norm = nn.LayerNorm(hidden)
         self.out_norm = nn.LayerNorm(hidden)
+
+        self.dropout = nn.Dropout(0.1)
 
         self.wl_mean = 1440
         self.wl_std = 600
@@ -54,12 +56,11 @@ class BandAttentionReducer(nn.Module):
 
         tokens = tokens + wl_enc
         tokens = self.token_norm(tokens)
+        tokens = self.dropout(tokens)
         
         # Cross-attend
         query = self.readout.expand(batch * samples, -1, -1)
         out, _ = self.cross_attn(query, tokens, tokens)
-        # Residual connection
-        out = query + out
         out = self.out_norm(out.squeeze(1))
         
         return out.view(batch, samples, self.hidden)
@@ -97,41 +98,40 @@ class Model(nn.Module):
         self.beta_low = nn.Parameter(torch.tensor(2.0))
         self.beta_high = nn.Parameter(torch.tensor(2.0))
 
-    def soft_pool(self, x, q, beta=5.0):
+    def soft_pool(self, x, q, beta):
         scores = x.norm(dim=-1, keepdim=True)
-        scores = (
-            (scores - scores.mean(dim=1, keepdim=True))
-            / (scores.std(dim=1, keepdim=True) + 1e-6)
-        )
-        logits = q * beta * scores
-        logits = logits.clamp(-10, 10)
-        w = torch.softmax(logits, dim=1)
 
-        return (w * x).sum(dim=1)
+        mean = scores.mean(dim=1, keepdim=True)
+        std = scores.std(dim=1, keepdim=True) + 1e-5
+
+        normalized_scores = (scores - mean) / std
+        logits = q * beta * normalized_scores
+        weights = torch.softmax(logits, dim=1)
+
+        return (weights * x).sum(dim=1)
 
     def forward(self, x, wl=[]):
         x = self.attn_encoder(x, wl)
         x = self.mlp(x)
 
         # Pooling
-        beta_low  = nn.functional.softplus(self.beta_low) + 0.5
-        beta_high = nn.functional.softplus(self.beta_high) + 0.5
+        beta_low  = nn.functional.softplus(self.beta_low) + 5.0
+        beta_high = nn.functional.softplus(self.beta_high) + 5.0
 
-        x_mean = x.mean(dim=1)
-        # x_low = self.soft_pool(
-        #     x,
-        #     q=-1, beta=beta_low
-        # )
-        # # x_low = torch.cat([x_min, x_mean], dim=-1)
+        # x_mean = x.mean(dim=1)
+        x_low = self.soft_pool(
+            x,
+            q=-1, beta=beta_low
+        )
 
-        # x_high = self.soft_pool(
-        #     x,
-        #     q=1,  beta=beta_high
-        # )
-        # x_high = torch.cat([x_max, x_mean], dim=-1)
+        x_high = self.soft_pool(
+            x,
+            q=1,  beta=beta_high
+        )
 
         # Targets
-        low = self.p1_head(x_mean)
-        high = self.p2_head(x_mean)
+        low = self.p1_head(x_low)
+        delta = nn.functional.softplus(self.p2_head(x_high))
+        high = low + delta
 
         return torch.cat([low, high], dim=1)

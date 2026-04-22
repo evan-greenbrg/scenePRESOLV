@@ -2,6 +2,7 @@ from pathlib import Path
 import sys
 import os
 from datetime import datetime
+from functools import partial
 
 import click
 import torch
@@ -22,6 +23,8 @@ from scenepresolv.model_quantile_encoder.model import Model as Model_attn
 from scenepresolv.model_quantile_encoder.trainer import Trainer as Trainer_attn
 from scenepresolv.model_quantile_encoder.evaluation import evaluation as evaluation_attn
 
+from scenepresolv.model_quantile_encoder.loss import pinball_loss, mse_loss
+
 
 def init_wandb(
     wandb_project,
@@ -39,6 +42,7 @@ def init_wandb(
             'epochs': kwargs.get('epochs'),
             'batch_size': kwargs.get('batch_size'),
             'model_type': model_type,
+            'nsamples': kwargs.get('nsamples'),
         }
         wandb_config.update(kwargs)
 
@@ -127,7 +131,7 @@ def train(
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=False,
+        shuffle=True,
     )
 
     test_dataset = ImageDataset(
@@ -147,7 +151,7 @@ def train(
     test_dataloader = DataLoader(
         test_dataset,
         batch_size=batch_size,
-        shuffle=False,
+        shuffle=True,
     )
     if just_cube:
         print("Finished just building cube")
@@ -160,8 +164,10 @@ def train(
         model,
         epochs=epochs,
         batch_size=batch_size,
+        nsamples=nsamples,
     )
 
+    switch_epoch = None
     if model == 'p99':
         use_wl = train_dataset.wl
         b = len(use_wl)
@@ -222,18 +228,18 @@ def train(
         model.apply(init_weights)
 
         opt = torch.optim.AdamW([
-            {"params": model.p1_head.parameters(), "lr": 1e-4},
-            {"params": model.p2_head.parameters(), "lr": 1e-4},
-            {"params": model.mlp.parameters(), "lr": 5e-4},
             {"params": model.attn_encoder.parameters(), "lr": 1e-3},
-            {"params": [model.beta_low, model.beta_high], "lr": 5e-3},
+            {"params": model.mlp.parameters(), "lr": 5e-4},
+            {"params": model.p1_head.parameters(), "lr": 5e-4},
+            {"params": model.p2_head.parameters(), "lr": 5e-4},
+            {"params": [model.beta_high], "lr": 5e-3},
+            {"params": [model.beta_low], "lr": 1e-3},
         ], weight_decay=1e-4)
 
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt,
-            patience=3,
-            factor=0.5,
-            min_lr=1e-6
+            T_max=epochs,
+            eta_min=1e-4,
         )
 
         # TODO allow this to vary within batch?
@@ -241,6 +247,7 @@ def train(
             train_dataset.wl
         ).type(torch.float32).to(device)
 
+        quantiles = [0.25, 0.75]
         trainer = Trainer_attn(
             quantiles=[.25, .75],
             run=run,
@@ -248,21 +255,48 @@ def train(
         )
 
         evaluation = evaluation_attn
+        switch_epoch = 10
+        duration = 10
 
     else:
         raise ValueError("Model string is invalid")
 
     for epoch in range(epochs):
+        if epoch < switch_epoch:
+            weight_pinball = 0
+            if epoch == 0:
+                print("Using MSE Warm-up---")
+        else:
+            weight_pinball = min((epoch - switch_epoch) / duration, 1)
+            if epoch == switch_epoch:
+                print("Switching to Pinball Loss")
+
+        if epoch == (switch_epoch):
+            for param_group in opt.param_groups:
+                param_group['lr'] *= 0.5
+
         model.train()
-        train_epoch_total_loss = 0
 
         opt.zero_grad()
         for i, batch_ in enumerate(train_dataloader):
             x = batch_['toa'].to(device)
             target = batch_['atmosphere'].to(device)
+            pred = model(x, wl)
 
-            loss_low, loss_high = trainer.loss_fn(model(x, wl), target)
-            loss = (loss_low + loss_high)
+            mse_loss_low, mse_loss_hi = mse_loss(
+                pred,
+                target,
+                quantiles=quantiles
+            )
+            mse_loss_total = mse_loss_low + mse_loss_hi
+            pinball_loss_low, pinball_loss_hi = pinball_loss(
+                pred, target,
+                quantiles=quantiles
+            )
+            pinball_loss_total = pinball_loss_low + (2 * pinball_loss_hi)
+
+            loss = (1 - weight_pinball) * mse_loss_total + weight_pinball * pinball_loss_total
+
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
             opt.step()
@@ -272,28 +306,20 @@ def train(
 
             opt.zero_grad()
 
-            run.log({"train/total_loss": loss_low + loss_high})
-            run.log({"train/low_loss": loss_low})
-            run.log({"train/high_loss": loss_high})
-
             run.log({"train/beta_low": model.beta_low.item()})
             run.log({"train/beta_high": model.beta_high.item()})
-            train_epoch_total_loss += (loss_low + loss_high)
-
-        train_epoch_total_loss /= len(train_dataloader)
 
         model.eval()
-        run.log({"train/epoch_total_loss": train_epoch_total_loss})
         train_eval_dict = evaluation(
-            train_dataloader, model, device, trainer.loss_fn
+            train_dataloader, model, device, epoch, weight_pinball
         )
         for key, value in train_eval_dict.items():
             run.log({f"train/{key}": value})
 
         test_eval_dict = evaluation(
-            test_dataloader, model, device, trainer.loss_fn,
+            test_dataloader, model, device, epoch, weight_pinball
         )
-        scheduler.step(test_eval_dict['loss_high'])
+        scheduler.step()
         for key, value in test_eval_dict.items():
             run.log({f"test/{key}": value})
         run.log({"epoch": epoch})

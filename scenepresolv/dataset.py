@@ -40,6 +40,8 @@ class ImageDataset(Dataset):
         self.index = [i for i in range(len(sp_paths))]
         self.dtype = dtype
 
+        self.global_max = 0.1
+
         # Set up paths
         self.sp_paths = sp_paths
         self.atm_paths = atm_paths
@@ -170,6 +172,7 @@ class ImageDataset(Dataset):
             len(self.atm_paths),
             self.target_dim
         ), dtype=np.float32)
+        self.global_max = 0
         for idx in range(len(self.atm_paths)):
             dayofyear = get_dayofyear(self.sp_paths[idx])
             rdn = envi.open(envi_header(self.sp_paths[idx]))
@@ -209,6 +212,13 @@ class ImageDataset(Dataset):
                 raise ValueError("Unit mode not valid")
 
             atm_cube[idx, ...] = self.target_fun(atm[..., atm_idx])
+
+            # get_maximum
+            cube_max = np.max(toa_cube)
+            if cube_max > self.global_max:
+                self.global_max = cube_max
+
+        toa_cube = toa_cube / self.global_max
 
         # Save cubes
         if save_to_disk:
@@ -339,6 +349,8 @@ class ImageDataset(Dataset):
             self.irr,
             self.esd[int(dayofyear) - 1, 1],
         )
+
+        toa = toa / self.global_max
 
         # Sample atm
         atm_sample = self.target_fun(atm[..., atm_idx])
