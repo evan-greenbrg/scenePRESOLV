@@ -101,7 +101,6 @@ def process_single_scene(
     irr,
     esd,
     pool_size,
-    quantiles=[0.25, 0.5, 0.75]
 ):
     h2o_names = ['H2O (g cm-2)', 'H2OSTR']
     dayofyear = get_dayofyear(sp_path)
@@ -162,7 +161,6 @@ def process_single_scene(
 @click.argument('wl_path')
 @click.argument('cache_root')
 @click.option('--pool_size', default=7500)
-@click.option('--quantiles', '-q', multiple=True, default=[0.05, 0.5, 0.95])
 @click.option('--n_jobs', default=-1)
 def build_cube(
     sp_paths,
@@ -171,7 +169,6 @@ def build_cube(
     wl_path,
     cache_root,
     pool_size=7500,
-    quantiles=[0.25, 0.5, 0.75],
     n_jobs=-1
 ):
     sp_paths = file_to_list(sp_paths)
@@ -205,7 +202,7 @@ def build_cube(
     results = Parallel(n_jobs=n_jobs)(
         delayed(process_single_scene)(
             i, sp_paths[i], atm_paths[i], obs_paths[i],
-            wl, fwhm, irr, esd, pool_size, quantiles
+            wl, fwhm, irr, esd, pool_size 
         ) for i in tqdm(range(len(atm_paths)))
     )
 

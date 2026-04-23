@@ -170,19 +170,6 @@ def train(
     wl = torch.tensor(wl).type(torch.float32).to(device)
 
     for epoch in range(epochs):
-        if epoch < switch_epoch:
-            weight_pinball = 0
-            if epoch == 0:
-                print("Using MSE Warm-up---")
-        else:
-            weight_pinball = min((epoch - switch_epoch) / duration, 1)
-            if epoch == switch_epoch:
-                print("Switching to Pinball Loss")
-
-        if epoch == (switch_epoch):
-            for param_group in opt.param_groups:
-                param_group['lr'] *= factor
-
         model.train()
 
         opt.zero_grad()
@@ -210,13 +197,13 @@ def train(
 
         model.eval()
         train_eval_dict = evaluation(
-            train_dataloader, model, wl,  device, epoch, weight_pinball
+            train_dataloader, model, wl,  device, epoch
         )
         for key, value in train_eval_dict.items():
             run.log({f"train/{key}": value})
 
         test_eval_dict = evaluation(
-            test_dataloader, model, wl, device, epoch, weight_pinball
+            test_dataloader, model, wl, device, epoch
         )
         scheduler.step()
         for key, value in test_eval_dict.items():

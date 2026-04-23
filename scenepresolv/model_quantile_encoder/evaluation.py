@@ -55,7 +55,7 @@ def print_beta(model, x, wl):
     return nn.Softplus()(model.beta_low).item(), nn.Softplus()(model.beta_high).item()
 
 
-def evaluation(dataloader, model, wl, device, epoch, weight_pinball):
+def evaluation(dataloader, model, wl, device, epoch):
     quantiles = [0.25, 0.75]
     all_pred = []
     all_target = []
