@@ -55,8 +55,7 @@ def print_beta(model, x, wl):
     return nn.Softplus()(model.beta_low).item(), nn.Softplus()(model.beta_high).item()
 
 
-def evaluation(dataloader, model, wl, device, epoch):
-    quantiles = [0.25, 0.75]
+def evaluation(dataloader, model, wl, device, epoch. quantiles=[0.05, 0.5, 0.95]):
     all_pred = []
     all_target = []
     similarities = []
@@ -83,7 +82,9 @@ def evaluation(dataloader, model, wl, device, epoch):
     pred = torch.cat(all_pred)
     target = torch.cat(all_target)
     
-    pinball_loss_low, pinball_loss_mid, pinball_loss_hi = pinball_loss(pred, target, quantiles=quantiles)
+    pinball_loss_low, pinball_loss_mid, pinball_loss_hi = pinball_loss(
+        pred, target, quantiles=quantiles
+    )
     pinball_loss_total = pinball_loss_low + pinball_loss_mid + pinball_loss_hi
 
     loss = pinball_loss_total

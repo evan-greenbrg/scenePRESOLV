@@ -197,13 +197,13 @@ def train(
 
         model.eval()
         train_eval_dict = evaluation(
-            train_dataloader, model, wl,  device, epoch
+            train_dataloader, model, wl, device, epoch, quantiles
         )
         for key, value in train_eval_dict.items():
             run.log({f"train/{key}": value})
 
         test_eval_dict = evaluation(
-            test_dataloader, model, wl, device, epoch
+            test_dataloader, model, wl, device, epoch, quantiles 
         )
         scheduler.step()
         for key, value in test_eval_dict.items():

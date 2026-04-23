@@ -16,6 +16,7 @@ class ImagePoolDataset(Dataset):
     def __getitem__(self, idx):
         indices = np.random.randint(0, self.num_pixels_in_pool, self.nsamples)
         toa_batch = self.toa_pool[idx, indices, :]
+        atm_batch = self.atm_targets[idx][indices]
 
         return {
             "toa": torch.from_numpy(toa_batch),
