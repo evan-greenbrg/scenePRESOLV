@@ -148,16 +148,16 @@ def train(
     model.apply(init_weights)
 
     with torch.no_grad():
-        model.mid_head[3].bias.fill_(0.8)
+        model.mid_head[4].bias.fill_(2.0)
 
     opt = torch.optim.AdamW([
-        {"params": model.attn_encoder.parameters(), "lr": 1e-3},
-        {"params": model.mlp.parameters(), "lr": 5e-4},
-        {"params": model.low_head.parameters(), "lr": 5e-4},
-        {"params": model.mid_head.parameters(), "lr": 5e-4},
-        {"params": model.high_head.parameters(), "lr": 5e-4},
-        {"params": [model.beta_high], "lr": 5e-3},
-        {"params": [model.beta_low], "lr": 1e-3},
+        {"params": model.attn_encoder.parameters(), "lr": 1e-3, "weight_decay": 1e-3},
+        {"params": model.mlp.parameters(), "lr": 5e-4, "weight_decay": 1e-3},
+        {"params": model.low_head.parameters(), "lr": 1e-3},
+        {"params": model.mid_head.parameters(), "lr": 1e-2},
+        {"params": model.high_head.parameters(), "lr": 2e-2},
+        {"params": [model.beta_high], "lr": 1e-2},
+        {"params": [model.beta_low], "lr": 5e-4},
     ], weight_decay=1e-4)
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -182,9 +182,9 @@ def train(
                 pred, target,
                 quantiles=quantiles
             )
-            loss = pinball_loss_low + pinball_loss_mid + pinball_loss_hi
+            loss = pinball_loss_low + pinball_loss_mid + (10 * pinball_loss_hi)
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
             opt.step()
 
             if i == len(train_dataloader) - 1:

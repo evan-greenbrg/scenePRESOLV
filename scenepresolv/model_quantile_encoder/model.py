@@ -32,7 +32,7 @@ class BandAttentionReducer(nn.Module):
         self.token_norm = nn.LayerNorm(hidden)
         self.out_norm = nn.LayerNorm(hidden)
 
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(0.3)
 
         self.wl_mean = 1440
         self.wl_std = 600
@@ -79,6 +79,7 @@ class Model(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(hidden, hidden),
             nn.GELU(),
+            nn.Dropout(0.3),
             nn.Linear(hidden, hidden),
         )
 
@@ -86,18 +87,21 @@ class Model(nn.Module):
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden),
             nn.GELU(),
+            nn.Dropout(0.2),
             nn.Linear(hidden, 1)
         )
         self.mid_head = nn.Sequential(
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden),
             nn.GELU(),
+            nn.Dropout(0.2),
             nn.Linear(hidden, 1)
         )
         self.high_head = nn.Sequential(
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden),
             nn.GELU(),
+            nn.Dropout(0.3),
             nn.Linear(hidden, 1)
         )
 
@@ -122,7 +126,7 @@ class Model(nn.Module):
 
         # Pooling
         beta_low  = nn.functional.softplus(self.beta_low) + 5.0
-        beta_high = nn.functional.softplus(self.beta_high) + 8.0
+        beta_high = nn.functional.softplus(self.beta_high) + 20.0
 
         x_low = self.soft_pool(
             x,
@@ -140,7 +144,9 @@ class Model(nn.Module):
         low_delta = nn.functional.softplus(self.low_head(x_low))
         high_delta = nn.functional.softplus(self.high_head(x_high))
 
-        low = mid - low_delta
-        high = mid + high_delta
+        mid_anchor = mid.detach()
+
+        low = mid_anchor - low_delta
+        high = mid_anchor + high_delta
 
         return torch.cat([low, mid, high], dim=1)
