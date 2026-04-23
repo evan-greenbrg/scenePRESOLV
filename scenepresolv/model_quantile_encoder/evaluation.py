@@ -9,32 +9,23 @@ from sklearn.metrics import (
 from scenepresolv.model_quantile_encoder.loss import pinball_loss, mse_loss
 
 
-def quantile_coverage(pred, target, quantiles=[0.01, 0.99]):
-    low_coverage  = (target[:, 0] > pred[:, 0]).float().mean()
-    high_coverage = (target[:, 1] < pred[:, 1]).float().mean()
-    return low_coverage.item(), high_coverage.item()
+def quantile_coverage(pred, target):
+    low_coverage  = (target < pred[:, 0]).float().mean()
+    mid_coverage  = (target < pred[:, 1]).float().mean()
+    high_coverage = (target > pred[:, 2]).float().mean()
+    return low_coverage.item(), mid_coverage.item(), high_coverage.item()
 
 
 def interval_width(pred):
-    return (pred[:, 1] - pred[:, 0]).mean().item()
+    return (pred[:, 2] - pred[:, 0]).mean().item()
 
 
-def quantile_mape(pred, target):
-    mape_low = (
-        (pred[:, 0] - target[:, 0]).abs() / (target[:, 0].abs() + 1e-6)
-    ).mean()
-    mape_high = (
-        (pred[:, 1] - target[:, 1]).abs() / (target[:, 1].abs() + 1e-6)
-    ).mean()
+def quantile_mae(pred, target, quantiles=[0.05, 0.5, 0.95]):
+    qs = [torch.quantile(target, q, axis=1) for q in quantiles]
+    maes = [pred[:, i] - qs[i] for i in range(len(quantiles))]
+    maes = [m.mean() for m in maes]
 
-    return mape_low.item(), mape_high.item()
-
-
-def quantile_mae(pred, target):
-    mae_low = (pred[:, 0] - target[:, 0]).mean()
-    mae_high = (pred[:, 1] - target[:, 1]).mean()
-
-    return mae_low.item(), mae_high.item()
+    return *[m.item() for m in maes]
 
 
 def attn_similarity(model, x, wl):
@@ -92,9 +83,8 @@ def evaluation(dataloader, model, wl, device, epoch, quantiles=[0.05, 0.5, 0.95]
     loss_mid = pinball_loss_mid
     loss_high = pinball_loss_hi
 
-    low_cov, high_cov = quantile_coverage(pred, target)
-    mape_low, mape_high = quantile_mape(pred, target)
-    mae_low, mae_high = quantile_mae(pred, target)
+    low_cov, mid_cov, high_cov = quantile_coverage(pred, target)
+    mae_low, mae_mid, mae_high = quantile_mae(pred, target, quantiles)
     width = interval_width(pred)
     
     return {
@@ -103,10 +93,10 @@ def evaluation(dataloader, model, wl, device, epoch, quantiles=[0.05, 0.5, 0.95]
         'loss_high': loss_high.item(),
         'loss_total': loss.item(),
         'coverage_low': low_cov,
+        'coverage_mid': mid_cov,
         'coverage_high': high_cov,
-        'mape_low': mape_low,
-        'mape_high': mape_high,
         'mae_low': mae_low,
+        'mae_mid': mae_mid,
         'mae_high': mae_high,
         'interval_width': width,
         'similarity': np.mean(similarities),
