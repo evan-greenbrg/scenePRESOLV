@@ -150,7 +150,7 @@ def process_single_scene(
         esd[int(dayofyear) - 1, 1]
     )
 
-    atm_data = np.quantile(atm_mm[..., atm_idx], q=quantiles)
+    atm_data = atm_mm[row, col, atm_idx].copy()
 
     return idx, toa_data, atm_data
 
@@ -196,9 +196,10 @@ def build_cube(
         len(wl)
     ), dtype=np.float32)
 
+    # Second dim will be pool size H2O
     atm_cube = np.zeros((
         len(atm_paths),
-        len(quantiles)
+        pool_size
     ), dtype=np.float32)
 
     results = Parallel(n_jobs=n_jobs)(
@@ -237,3 +238,4 @@ def build_cube(
 
 if __name__ == '__main__':
     build_cube()
+
