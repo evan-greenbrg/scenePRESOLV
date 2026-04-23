@@ -169,9 +169,6 @@ def train(
     # TODO allow this to vary within batch?
     wl = torch.tensor(wl).type(torch.float32).to(device)
 
-    switch_epoch = 10
-    duration = 20
-    factor = 0.5
     for epoch in range(epochs):
         if epoch < switch_epoch:
             weight_pinball = 0
@@ -194,24 +191,11 @@ def train(
             target = batch_['atmosphere'].to(device)
             pred = model(x, wl)
 
-            mse_loss_low, mse_loss_mid, mse_loss_hi = mse_loss(
-                pred,
-                target,
-                quantiles=quantiles
-            )
-            mse_loss_total = mse_loss_low + mse_loss_mid + mse_loss_hi
-
             pinball_loss_low, pinball_loss_mid, pinball_loss_hi = pinball_loss(
                 pred, target,
                 quantiles=quantiles
             )
-            pinball_loss_total = pinball_loss_low + pinball_loss_mid + pinball_loss_hi
-
-            loss = (
-                (1 - weight_pinball) * mse_loss_total
-                + (weight_pinball * pinball_loss_total)
-            )
-
+            loss = pinball_loss_low + pinball_loss_mid + pinball_loss_hi
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
             opt.step()

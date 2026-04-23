@@ -83,16 +83,13 @@ def evaluation(dataloader, model, wl, device, epoch, weight_pinball):
     pred = torch.cat(all_pred)
     target = torch.cat(all_target)
     
-    mse_loss_low, mse_loss_mid, mse_loss_hi = mse_loss(pred, target, quantiles=quantiles)
-    mse_loss_total = mse_loss_low + mse_loss_mid + mse_loss_hi
-
     pinball_loss_low, pinball_loss_mid, pinball_loss_hi = pinball_loss(pred, target, quantiles=quantiles)
     pinball_loss_total = pinball_loss_low + pinball_loss_mid + pinball_loss_hi
 
-    loss = (1 - weight_pinball) * mse_loss_total + weight_pinball * pinball_loss_total
-    loss_low = (1 - weight_pinball) * mse_loss_low + weight_pinball * pinball_loss_low
-    loss_mid = (1 - weight_pinball) * mse_loss_mid + weight_pinball * pinball_loss_mid
-    loss_high = (1 - weight_pinball) * mse_loss_hi + weight_pinball * pinball_loss_hi
+    loss = pinball_loss_total
+    loss_low = pinball_loss_low
+    loss_mid = pinball_loss_mid
+    loss_high = pinball_loss_hi
 
     low_cov, high_cov = quantile_coverage(pred, target)
     mape_low, mape_high = quantile_mape(pred, target)
