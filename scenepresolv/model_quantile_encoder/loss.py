@@ -10,8 +10,6 @@ def pinball_loss(
 ):
     t = target.unsqueeze(2) 
     p = pred.unsqueeze(1)
-    print(t.shape)
-    print(p.shape)
 
     err = t - p
     q = torch.tensor(quantiles, device=pred.device).view(1, 1, -1)

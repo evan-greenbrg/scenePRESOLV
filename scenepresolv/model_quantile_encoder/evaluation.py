@@ -10,9 +10,9 @@ from scenepresolv.model_quantile_encoder.loss import pinball_loss, mse_loss
 
 
 def quantile_coverage(pred, target):
-    low_coverage  = (target < pred[:, 0]).float().mean()
-    mid_coverage  = (target < pred[:, 1]).float().mean()
-    high_coverage = (target > pred[:, 2]).float().mean()
+    low_coverage  = (target < pred[:, 0][:, None]).float().mean()
+    mid_coverage  = (target < pred[:, 1][:, None]).float().mean()
+    high_coverage = (target < pred[:, 2][:, None]).float().mean()
     return low_coverage.item(), mid_coverage.item(), high_coverage.item()
 
 
@@ -27,7 +27,7 @@ def quantile_mae(pred, target, quantiles=[0.05, 0.5, 0.95]):
 
     mae_low, mae_mid, mae_high = [m.item() for m in maes]
 
-    return maer_low, maer_mid, mae_high
+    return mae_low, mae_mid, mae_high
 
 
 def attn_similarity(model, x, wl):
