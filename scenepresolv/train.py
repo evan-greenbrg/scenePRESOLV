@@ -69,19 +69,17 @@ def init_dataloader(worker_id):
 
 
 @click.command()
-@click.argument('train_rdn_path')
-@click.argument('train_atm_path')
-@click.argument('train_obs_path')
-@click.argument('test_rdn_path')
-@click.argument('test_atm_path')
-@click.argument('test_obs_path')
+@click.argument('train_pool_path')
+@click.argument('train_target_path')
+@click.argument('test_pool_path')
+@click.argument('test_target_path')
 @click.argument('wavelength_grid')
 @click.argument('outdir')
 @click.argument('model')
 @click.argument('wandb_name')
 @click.argument('wandb_entity')
 @click.argument('wandb_project')
-@click.argument('--quantiles' '-q', multiple=True, default=[0.25, 0.75])
+@click.option('--quantiles', '-q', multiple=True, default=[0.25, 0.5, 0.75])
 @click.option('--hidden', default=128)
 @click.option('--batch_size', default=20)
 @click.option('--nsamples', default=500)
@@ -99,7 +97,7 @@ def train(
     wandb_name: str,
     wandb_entity: str,
     wandb_project: str,
-    quantiles: list = [0.25, 0.75],
+    quantiles: list = [0.25, 0.5, 0.75],
     hidden: int = 128,
     batch_size: int = 20,
     nsamples: int = 300,
@@ -114,6 +112,7 @@ def train(
         train_target_path,
         nsamples
     )
+
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -143,16 +142,20 @@ def train(
         hidden=hidden,
     )
 
-    use_wl = train_dataset.wl
-    banddef = torch.tensor(use_wl, dtype=torch.float32).to(device)
+    wl = np.loadtxt(wavelength_grid)[:, 0] * 1000
+    banddef = torch.tensor(wl, dtype=torch.float32).to(device)
     model = Model(banddef, hidden=hidden).to(device)
     model.apply(init_weights)
+
+    with torch.no_grad():
+        model.mid_head[3].bias.fill_(0.8)
 
     opt = torch.optim.AdamW([
         {"params": model.attn_encoder.parameters(), "lr": 1e-3},
         {"params": model.mlp.parameters(), "lr": 5e-4},
-        {"params": model.p1_head.parameters(), "lr": 5e-4},
-        {"params": model.p2_head.parameters(), "lr": 5e-4},
+        {"params": model.low_head.parameters(), "lr": 5e-4},
+        {"params": model.mid_head.parameters(), "lr": 5e-4},
+        {"params": model.high_head.parameters(), "lr": 5e-4},
         {"params": [model.beta_high], "lr": 5e-3},
         {"params": [model.beta_low], "lr": 1e-3},
     ], weight_decay=1e-4)
@@ -164,9 +167,7 @@ def train(
     )
 
     # TODO allow this to vary within batch?
-    wl = torch.tensor(
-        train_dataset.wl
-    ).type(torch.float32).to(device)
+    wl = torch.tensor(wl).type(torch.float32).to(device)
 
     switch_epoch = 10
     duration = 20
@@ -193,18 +194,18 @@ def train(
             target = batch_['atmosphere'].to(device)
             pred = model(x, wl)
 
-            mse_loss_low, mse_loss_hi = mse_loss(
+            mse_loss_low, mse_loss_mid, mse_loss_hi = mse_loss(
                 pred,
                 target,
                 quantiles=quantiles
             )
-            mse_loss_total = mse_loss_low + mse_loss_hi
+            mse_loss_total = mse_loss_low + mse_loss_mid + mse_loss_hi
 
-            pinball_loss_low, pinball_loss_hi = pinball_loss(
+            pinball_loss_low, pinball_loss_mid, pinball_loss_hi = pinball_loss(
                 pred, target,
                 quantiles=quantiles
             )
-            pinball_loss_total = pinball_loss_low + pinball_loss_hi
+            pinball_loss_total = pinball_loss_low + pinball_loss_mid + pinball_loss_hi
 
             loss = (
                 (1 - weight_pinball) * mse_loss_total
@@ -225,13 +226,13 @@ def train(
 
         model.eval()
         train_eval_dict = evaluation(
-            train_dataloader, model, device, epoch, weight_pinball
+            train_dataloader, model, wl,  device, epoch, weight_pinball
         )
         for key, value in train_eval_dict.items():
             run.log({f"train/{key}": value})
 
         test_eval_dict = evaluation(
-            test_dataloader, model, device, epoch, weight_pinball
+            test_dataloader, model, wl, device, epoch, weight_pinball
         )
         scheduler.step()
         for key, value in test_eval_dict.items():

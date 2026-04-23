@@ -10,8 +10,8 @@ from scenepresolv.model_quantile_encoder.loss import pinball_loss, mse_loss
 
 
 def quantile_coverage(pred, target, quantiles=[0.01, 0.99]):
-    low_coverage  = (target[:, 0] < pred[:, 0]).float().mean()
-    high_coverage = (target[:, 1] > pred[:, 1]).float().mean()
+    low_coverage  = (target[:, 0] > pred[:, 0]).float().mean()
+    high_coverage = (target[:, 1] < pred[:, 1]).float().mean()
     return low_coverage.item(), high_coverage.item()
 
 
@@ -55,7 +55,7 @@ def print_beta(model, x, wl):
     return nn.Softplus()(model.beta_low).item(), nn.Softplus()(model.beta_high).item()
 
 
-def evaluation(dataloader, model, device, epoch, weight_pinball):
+def evaluation(dataloader, model, wl, device, epoch, weight_pinball):
     quantiles = [0.25, 0.75]
     all_pred = []
     all_target = []
@@ -63,7 +63,7 @@ def evaluation(dataloader, model, device, epoch, weight_pinball):
     emb_norms = []
     low_betas = []
     high_betas = []
-    wl = torch.tensor(dataloader.dataset.wl).type(torch.float32).to(device)
+    wl = torch.tensor(wl).type(torch.float32).to(device)
     with torch.no_grad():
         for batch in dataloader:
             x = batch['toa'].to(device)
@@ -83,13 +83,15 @@ def evaluation(dataloader, model, device, epoch, weight_pinball):
     pred = torch.cat(all_pred)
     target = torch.cat(all_target)
     
-    mse_loss_low, mse_loss_hi = mse_loss(pred, target, quantiles=quantiles)
-    mse_loss_total = mse_loss_low + (2 * mse_loss_hi)
-    pinball_loss_low, pinball_loss_hi = pinball_loss(pred, target, quantiles=quantiles)
-    pinball_loss_total = pinball_loss_low + (2 * pinball_loss_hi)
-    loss = (1 - weight_pinball) * mse_loss_total + weight_pinball * pinball_loss_total
+    mse_loss_low, mse_loss_mid, mse_loss_hi = mse_loss(pred, target, quantiles=quantiles)
+    mse_loss_total = mse_loss_low + mse_loss_mid + mse_loss_hi
 
+    pinball_loss_low, pinball_loss_mid, pinball_loss_hi = pinball_loss(pred, target, quantiles=quantiles)
+    pinball_loss_total = pinball_loss_low + pinball_loss_mid + pinball_loss_hi
+
+    loss = (1 - weight_pinball) * mse_loss_total + weight_pinball * pinball_loss_total
     loss_low = (1 - weight_pinball) * mse_loss_low + weight_pinball * pinball_loss_low
+    loss_mid = (1 - weight_pinball) * mse_loss_mid + weight_pinball * pinball_loss_mid
     loss_high = (1 - weight_pinball) * mse_loss_hi + weight_pinball * pinball_loss_hi
 
     low_cov, high_cov = quantile_coverage(pred, target)
@@ -99,6 +101,7 @@ def evaluation(dataloader, model, device, epoch, weight_pinball):
     
     return {
         'loss_low': loss_low.item(),
+        'loss_mid': loss_mid.item(),
         'loss_high': loss_high.item(),
         'loss_total': loss.item(),
         'coverage_low': low_cov,

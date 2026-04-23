@@ -82,13 +82,19 @@ class Model(nn.Module):
             nn.Linear(hidden, hidden),
         )
 
-        self.p1_head = nn.Sequential(
+        self.low_head = nn.Sequential(
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden),
             nn.GELU(),
             nn.Linear(hidden, 1)
         )
-        self.p2_head = nn.Sequential(
+        self.mid_head = nn.Sequential(
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, 1)
+        )
+        self.high_head = nn.Sequential(
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden),
             nn.GELU(),
@@ -116,22 +122,25 @@ class Model(nn.Module):
 
         # Pooling
         beta_low  = nn.functional.softplus(self.beta_low) + 5.0
-        beta_high = nn.functional.softplus(self.beta_high) + 5.0
+        beta_high = nn.functional.softplus(self.beta_high) + 8.0
 
-        # x_mean = x.mean(dim=1)
         x_low = self.soft_pool(
             x,
             q=-1, beta=beta_low
         )
-
+        x_mid = x.mean(dim=1)
         x_high = self.soft_pool(
             x,
             q=1,  beta=beta_high
         )
 
         # Targets
-        low = self.p1_head(x_low)
-        delta = nn.functional.softplus(self.p2_head(x_high))
-        high = low + delta
+        mid = self.mid_head(x_mid)
 
-        return torch.cat([low, high], dim=1)
+        low_delta = nn.functional.softplus(self.low_head(x_low))
+        high_delta = nn.functional.softplus(self.high_head(x_high))
+
+        low = mid - low_delta
+        high = mid + high_delta
+
+        return torch.cat([low, mid, high], dim=1)
