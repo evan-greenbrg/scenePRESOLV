@@ -25,7 +25,9 @@ def quantile_mae(pred, target, quantiles=[0.05, 0.5, 0.95]):
     maes = [pred[:, i] - qs[i] for i in range(len(quantiles))]
     maes = [m.mean() for m in maes]
 
-    return *[m.item() for m in maes]
+    mae_low, mae_mid, mae_high = [m.item() for m in maes]
+
+    return maer_low, maer_mid, mae_high
 
 
 def attn_similarity(model, x, wl):
