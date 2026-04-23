@@ -55,7 +55,7 @@ def print_beta(model, x, wl):
     return nn.Softplus()(model.beta_low).item(), nn.Softplus()(model.beta_high).item()
 
 
-def evaluation(dataloader, model, wl, device, epoch. quantiles=[0.05, 0.5, 0.95]):
+def evaluation(dataloader, model, wl, device, epoch, quantiles=[0.05, 0.5, 0.95]):
     all_pred = []
     all_target = []
     similarities = []
