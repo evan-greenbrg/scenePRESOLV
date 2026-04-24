@@ -146,6 +146,8 @@ def train(
     banddef = torch.tensor(wl, dtype=torch.float32).to(device)
     model = Model(banddef, hidden=hidden).to(device)
     model.apply(init_weights)
+    with torch.no_grad():
+        model.attn_encoder.wavelength_proj.weight.data *= 2.0
 
     with torch.no_grad():
         model.mid_head[3].bias.fill_(2.0)

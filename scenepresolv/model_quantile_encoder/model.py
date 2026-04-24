@@ -24,7 +24,8 @@ class BandAttentionReducer(nn.Module):
         
         # Cross-attention readout
         self.readout = nn.Parameter(torch.randn(1, 1, hidden))
-        nn.init.normal_(self.readout, std=0.02)
+        # nn.init.normal_(self.readout, std=0.02)
+        nn.init.orthogonal_(self.readout[0])
 
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=hidden,
@@ -34,7 +35,7 @@ class BandAttentionReducer(nn.Module):
         self.token_norm = nn.LayerNorm(hidden)
         self.out_norm = nn.LayerNorm(hidden)
 
-        self.dropout = nn.Dropout(0.3)
+        self.dropout = nn.Dropout(0.4)
 
         self.wl_mean = 1440
         self.wl_std = 600
@@ -47,7 +48,6 @@ class BandAttentionReducer(nn.Module):
         batch, samples, bands = x.shape
         
         # Project band values
-        x *= 100    # Gain
         x = x.view(batch * samples, bands, 1)
         x = self.input_norm(x)
         tokens = self.band_proj(x)
@@ -126,8 +126,8 @@ class Model(nn.Module):
         x = self.mlp(x)
 
         # Pooling
-        beta_low  = nn.functional.softplus(self.beta_low) + 5.0
-        beta_high = nn.functional.softplus(self.beta_high) + 8.0
+        beta_low  = nn.functional.softplus(self.beta_low) + 1.0
+        beta_high = nn.functional.softplus(self.beta_high) + 1.0
 
         x_low = self.soft_pool(
             x,
