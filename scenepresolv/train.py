@@ -148,7 +148,7 @@ def train(
     model.apply(init_weights)
 
     with torch.no_grad():
-        model.mid_head[4].bias.fill_(2.0)
+        model.mid_head[3].bias.fill_(2.0)
 
     opt = torch.optim.AdamW([
         {"params": model.attn_encoder.parameters(), "lr": 1e-3, "weight_decay": 1e-3},
@@ -182,7 +182,9 @@ def train(
                 pred, target,
                 quantiles=quantiles
             )
-            loss = pinball_loss_low + pinball_loss_mid + (10 * pinball_loss_hi)
+            width_penalty = (pred[:, 2] - pred[:, 0]).mean() * 0.1
+            loss = pinball_loss_low + pinball_loss_mid + (10 * pinball_loss_hi) + width_penalty
+
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
             opt.step()

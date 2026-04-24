@@ -10,9 +10,9 @@ from scenepresolv.model_quantile_encoder.loss import pinball_loss, mse_loss
 
 
 def quantile_coverage(pred, target):
-    low_coverage  = (target < pred[:, 0][:, None]).float().mean()
-    mid_coverage  = (target < pred[:, 1][:, None]).float().mean()
-    high_coverage = (target < pred[:, 2][:, None]).float().mean()
+    low_coverage  = (target < pred[:, 0][:, None]).float().mean(dim=(0, 1))
+    mid_coverage  = (target < pred[:, 1][:, None]).float().mean(dim=(0, 1))
+    high_coverage = (target < pred[:, 2][:, None]).float().mean(dim=(0, 1))
     return low_coverage.item(), mid_coverage.item(), high_coverage.item()
 
 

@@ -219,7 +219,7 @@ def build_cube(
                 global_norm = local_max
             valid_count += 1
 
-    toa_cube /= global_norm
+    # toa_cube /= global_norm
 
     cache_root = Path(cache_root)
     os.makedirs(cache_root.parent, exist_ok=True)

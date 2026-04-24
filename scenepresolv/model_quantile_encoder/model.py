@@ -10,6 +10,8 @@ class BandAttentionReducer(nn.Module):
 
         # Hidden shared encoding across wavelength grids
         self.hidden = hidden
+
+        self.input_norm = nn.LayerNorm(1)
         
         # Project each scalar band value to hidden dim
         self.band_proj = nn.Sequential(
@@ -45,7 +47,9 @@ class BandAttentionReducer(nn.Module):
         batch, samples, bands = x.shape
         
         # Project band values
+        x *= 100    # Gain
         x = x.view(batch * samples, bands, 1)
+        x = self.input_norm(x)
         tokens = self.band_proj(x)
         
         # Normalize to [0, 1] range — keeps inputs well-scaled
@@ -79,7 +83,7 @@ class Model(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(hidden, hidden),
             nn.GELU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.1),
             nn.Linear(hidden, hidden),
         )
 
@@ -87,21 +91,18 @@ class Model(nn.Module):
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden),
             nn.GELU(),
-            nn.Dropout(0.2),
             nn.Linear(hidden, 1)
         )
         self.mid_head = nn.Sequential(
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden),
             nn.GELU(),
-            nn.Dropout(0.2),
             nn.Linear(hidden, 1)
         )
         self.high_head = nn.Sequential(
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden),
             nn.GELU(),
-            nn.Dropout(0.3),
             nn.Linear(hidden, 1)
         )
 
@@ -126,7 +127,7 @@ class Model(nn.Module):
 
         # Pooling
         beta_low  = nn.functional.softplus(self.beta_low) + 5.0
-        beta_high = nn.functional.softplus(self.beta_high) + 20.0
+        beta_high = nn.functional.softplus(self.beta_high) + 8.0
 
         x_low = self.soft_pool(
             x,
