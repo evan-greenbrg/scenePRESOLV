@@ -33,6 +33,7 @@ class BandAttentionReducer(nn.Module):
             batch_first=True
         )
         self.token_norm = nn.LayerNorm(hidden)
+        self.query_norm = nn.LayerNorm(hidden)
         self.out_norm = nn.LayerNorm(hidden)
 
         self.dropout = nn.Dropout(0.4)
@@ -45,11 +46,16 @@ class BandAttentionReducer(nn.Module):
         x:           (s, n, b)
         wavelengths: (b,) in nm e.g. tensor([443, 490, 560, ...])
         """
+        mean = x.mean(dim=-1, keepdim=True)
+        std  = x.std(dim=-1, keepdim=True) + 1e-6
+        x = (x - mean) / std
+
+        # x: (batch, samples, bands)
         batch, samples, bands = x.shape
         
         # Project band values
+        # x = self.input_norm(x)
         x = x.view(batch * samples, bands, 1)
-        x = self.input_norm(x)
         tokens = self.band_proj(x)
         
         # Normalize to [0, 1] range — keeps inputs well-scaled
@@ -63,9 +69,10 @@ class BandAttentionReducer(nn.Module):
         tokens = self.dropout(tokens)
         
         # Cross-attend
+        residual = tokens.mean(dim=1)
         query = self.readout.expand(batch * samples, -1, -1)
         out, _ = self.cross_attn(query, tokens, tokens)
-        out = self.out_norm(out.squeeze(1))
+        out = self.out_norm(out.squeeze(1) + residual)
         
         return out.view(batch, samples, self.hidden)
 
@@ -112,11 +119,7 @@ class Model(nn.Module):
     def soft_pool(self, x, q, beta):
         scores = x.norm(dim=-1, keepdim=True)
 
-        mean = scores.mean(dim=1, keepdim=True)
-        std = scores.std(dim=1, keepdim=True) + 1e-5
-
-        normalized_scores = (scores - mean) / std
-        logits = q * beta * normalized_scores
+        logits = q * beta * scores
         weights = torch.softmax(logits, dim=1)
 
         return (weights * x).sum(dim=1)
@@ -127,7 +130,7 @@ class Model(nn.Module):
 
         # Pooling
         beta_low  = nn.functional.softplus(self.beta_low) + 1.0
-        beta_high = nn.functional.softplus(self.beta_high) + 1.0
+        beta_high = nn.functional.softplus(self.beta_high) + 8.0
 
         x_low = self.soft_pool(
             x,
@@ -145,9 +148,7 @@ class Model(nn.Module):
         low_delta = nn.functional.softplus(self.low_head(x_low))
         high_delta = nn.functional.softplus(self.high_head(x_high))
 
-        mid_anchor = mid.detach()
-
-        low = mid_anchor - low_delta
-        high = mid_anchor + high_delta
+        low = mid.detach() - low_delta
+        high = mid.detach() + high_delta
 
         return torch.cat([low, mid, high], dim=1)

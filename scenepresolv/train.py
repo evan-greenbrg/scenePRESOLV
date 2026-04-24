@@ -145,12 +145,13 @@ def train(
     wl = np.loadtxt(wavelength_grid)[:, 0] * 1000
     banddef = torch.tensor(wl, dtype=torch.float32).to(device)
     model = Model(banddef, hidden=hidden).to(device)
+
     model.apply(init_weights)
     with torch.no_grad():
-        model.attn_encoder.wavelength_proj.weight.data *= 2.0
-
-    with torch.no_grad():
+        model.low_head[3].bias.fill_(1.0)
         model.mid_head[3].bias.fill_(2.0)
+        model.high_head[3].bias.fill_(3.0)
+        model.attn_encoder.wavelength_proj.weight.data *= 2.0
 
     opt = torch.optim.AdamW([
         {"params": model.attn_encoder.parameters(), "lr": 1e-3, "weight_decay": 1e-3},
@@ -162,11 +163,11 @@ def train(
         {"params": [model.beta_low], "lr": 5e-4},
     ], weight_decay=1e-4)
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        opt,
-        T_max=epochs,
-        eta_min=1e-4,
-    )
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    #     opt,
+    #     T_max=epochs,
+    #     eta_min=1e-4,
+    # )
 
     # TODO allow this to vary within batch?
     wl = torch.tensor(wl).type(torch.float32).to(device)
@@ -185,7 +186,7 @@ def train(
                 quantiles=quantiles
             )
             width_penalty = (pred[:, 2] - pred[:, 0]).mean() * 0.1
-            loss = pinball_loss_low + pinball_loss_mid + (10 * pinball_loss_hi) + width_penalty
+            loss = pinball_loss_low + pinball_loss_mid + pinball_loss_hi + width_penalty
 
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
@@ -209,7 +210,7 @@ def train(
         test_eval_dict = evaluation(
             test_dataloader, model, wl, device, epoch, quantiles 
         )
-        scheduler.step()
+        # scheduler.step()
         for key, value in test_eval_dict.items():
             run.log({f"test/{key}": value})
         run.log({"epoch": epoch})
