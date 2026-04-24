@@ -79,7 +79,7 @@ def init_dataloader(worker_id):
 @click.argument('wandb_name')
 @click.argument('wandb_entity')
 @click.argument('wandb_project')
-@click.option('--quantiles', '-q', multiple=True, default=[0.25, 0.5, 0.75])
+@click.option('--quantiles', '-q', multiple=True, default=[0.05, 0.95])
 @click.option('--hidden', default=128)
 @click.option('--batch_size', default=20)
 @click.option('--nsamples', default=500)
@@ -97,7 +97,7 @@ def train(
     wandb_name: str,
     wandb_entity: str,
     wandb_project: str,
-    quantiles: list = [0.25, 0.5, 0.75],
+    quantiles: list = [0.05, 0.95],
     hidden: int = 128,
     batch_size: int = 20,
     nsamples: int = 300,
@@ -105,6 +105,7 @@ def train(
     ncores: int = 1,
     save_every_epoch: bool = False,
 ):
+    print(quantiles)
     device = get_device()
 
     train_dataset = ImagePoolDataset(
@@ -149,7 +150,7 @@ def train(
     model.apply(init_weights)
     with torch.no_grad():
         model.low_head[3].bias.fill_(1.0)
-        model.mid_head[3].bias.fill_(2.0)
+        # model.mid_head[3].bias.fill_(2.0)
         model.high_head[3].bias.fill_(3.0)
         model.attn_encoder.wavelength_proj.weight.data *= 2.0
 
@@ -157,7 +158,7 @@ def train(
         {"params": model.attn_encoder.parameters(), "lr": 1e-3, "weight_decay": 1e-3},
         {"params": model.mlp.parameters(), "lr": 5e-4, "weight_decay": 1e-3},
         {"params": model.low_head.parameters(), "lr": 1e-3},
-        {"params": model.mid_head.parameters(), "lr": 1e-2},
+        # {"params": model.mid_head.parameters(), "lr": 1e-2},
         {"params": model.high_head.parameters(), "lr": 2e-2},
         {"params": [model.beta_high], "lr": 1e-2},
         {"params": [model.beta_low], "lr": 5e-4},
@@ -181,12 +182,14 @@ def train(
             target = batch_['atmosphere'].to(device)
             pred = model(x, wl)
 
-            pinball_loss_low, pinball_loss_mid, pinball_loss_hi = pinball_loss(
+            # pinball_loss_low, pinball_loss_mid, pinball_loss_hi = pinball_loss(
+            pinball_loss_low, pinball_loss_hi = pinball_loss(
                 pred, target,
                 quantiles=quantiles
             )
-            width_penalty = (pred[:, 2] - pred[:, 0]).mean() * 0.1
-            loss = pinball_loss_low + pinball_loss_mid + pinball_loss_hi + width_penalty
+            width_penalty = (pred[:, 1] - pred[:, 0]).mean() * 0.1
+            # loss = pinball_loss_low + pinball_loss_mid + pinball_loss_hi + width_penalty
+            loss = pinball_loss_low + pinball_loss_hi + width_penalty
 
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)

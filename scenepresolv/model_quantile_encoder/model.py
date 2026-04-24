@@ -96,12 +96,12 @@ class Model(nn.Module):
             nn.GELU(),
             nn.Linear(hidden, 1)
         )
-        self.mid_head = nn.Sequential(
-            nn.LayerNorm(hidden),
-            nn.Linear(hidden, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, 1)
-        )
+        # self.mid_head = nn.Sequential(
+        #     nn.LayerNorm(hidden),
+        #     nn.Linear(hidden, hidden),
+        #     nn.GELU(),
+        #     nn.Linear(hidden, 1)
+        # )
         self.high_head = nn.Sequential(
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden),
@@ -109,14 +109,15 @@ class Model(nn.Module):
             nn.Linear(hidden, 1)
         )
 
-        self.beta_low = nn.Parameter(torch.tensor(2.0))
-        self.beta_high = nn.Parameter(torch.tensor(2.0))
+        self.beta_low = nn.Parameter(torch.tensor(0.0))
+        self.beta_high = nn.Parameter(torch.tensor(0.0))
 
     def soft_pool(self, x, q, beta):
         scores = x.norm(dim=-1, keepdim=True)
 
-        logits = q * beta * scores / (scores.std() + 1e-5)
-        weights = torch.softmax(logits, dim=1)
+        logits = q * beta * scores
+        log_weights = torch.log_softmax(logits, dim=1)
+        weights = torch.exp(log_weights)
 
         return (weights * x).sum(dim=1)
 
@@ -126,25 +127,25 @@ class Model(nn.Module):
 
         # Pooling
         beta_low  = nn.functional.softplus(self.beta_low) + 1.0
-        beta_high = nn.functional.softplus(self.beta_high) + 8.0
+        beta_high = nn.functional.softplus(self.beta_high) + 1.0
 
+        # x_mean = x.mean(dim=1)
         x_low = self.soft_pool(
             x,
             q=-1, beta=beta_low
         )
-        x_mid = x.mean(dim=1)
         x_high = self.soft_pool(
             x,
             q=1,  beta=beta_high
         )
 
         # Targets
-        mid = self.mid_head(x_mid)
+        # mid = self.mid_head(x_mid)
 
-        low_delta = nn.functional.softplus(self.low_head(x_low))
+        low = nn.functional.softplus(self.low_head(x_low))
         high_delta = nn.functional.softplus(self.high_head(x_high))
 
-        low = mid - low_delta
-        high = mid + high_delta
+        high = low + high_delta
 
-        return torch.cat([low, mid, high], dim=1)
+        return torch.cat([low, high], dim=1)
+        # return torch.cat([low, mid, high], dim=1)
