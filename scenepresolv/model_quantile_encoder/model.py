@@ -5,13 +5,11 @@ from spectf.model import SpecTfEncoder
 
 
 class BandAttentionReducer(nn.Module):
-    def __init__(self, hidden=256, nheads=4):
+    def __init__(self, hidden=256, nheads=4, n_readout=4):
         super().__init__()
 
         # Hidden shared encoding across wavelength grids
         self.hidden = hidden
-
-        self.input_norm = nn.LayerNorm(1)
         
         # Project each scalar band value to hidden dim
         self.band_proj = nn.Sequential(
@@ -23,7 +21,8 @@ class BandAttentionReducer(nn.Module):
         self.wavelength_proj = nn.Linear(1, hidden, bias=False)
         
         # Cross-attention readout
-        self.readout = nn.Parameter(torch.randn(1, 1, hidden))
+        # self.readout = nn.Parameter(torch.randn(1, 1, hidden))
+        self.readout = nn.Parameter(torch.randn(1, n_readout, hidden) * 0.02)
         # nn.init.normal_(self.readout, std=0.02)
         nn.init.orthogonal_(self.readout[0])
 
@@ -36,26 +35,23 @@ class BandAttentionReducer(nn.Module):
         self.query_norm = nn.LayerNorm(hidden)
         self.out_norm = nn.LayerNorm(hidden)
 
-        self.dropout = nn.Dropout(0.4)
+        self.dropout = nn.Dropout(0.0)
 
         self.wl_mean = 1440
         self.wl_std = 600
+        self.input_scale = 0.1
 
     def forward(self, x, wl):
         """
         x:           (s, n, b)
         wavelengths: (b,) in nm e.g. tensor([443, 490, 560, ...])
         """
-        mean = x.mean(dim=-1, keepdim=True)
-        std  = x.std(dim=-1, keepdim=True) + 1e-6
-        x = (x - mean) / std
-
         # x: (batch, samples, bands)
         batch, samples, bands = x.shape
         
         # Project band values
-        # x = self.input_norm(x)
         x = x.view(batch * samples, bands, 1)
+        x = x / self.input_scale
         tokens = self.band_proj(x)
         
         # Normalize to [0, 1] range — keeps inputs well-scaled
@@ -66,13 +62,13 @@ class BandAttentionReducer(nn.Module):
 
         tokens = tokens + wl_enc
         tokens = self.token_norm(tokens)
-        tokens = self.dropout(tokens)
         
-        # Cross-attend
-        residual = tokens.mean(dim=1)
         query = self.readout.expand(batch * samples, -1, -1)
-        out, _ = self.cross_attn(query, tokens, tokens)
-        out = self.out_norm(out.squeeze(1) + residual)
+        out, attn_weights = self.cross_attn(
+            query, tokens, tokens, need_weights=True
+        )
+        out = self.dropout(out).mean(dim=1)
+        out = self.out_norm(out)
         
         return out.view(batch, samples, self.hidden)
 
@@ -119,7 +115,7 @@ class Model(nn.Module):
     def soft_pool(self, x, q, beta):
         scores = x.norm(dim=-1, keepdim=True)
 
-        logits = q * beta * scores
+        logits = q * beta * scores / (scores.std() + 1e-5)
         weights = torch.softmax(logits, dim=1)
 
         return (weights * x).sum(dim=1)
@@ -148,7 +144,7 @@ class Model(nn.Module):
         low_delta = nn.functional.softplus(self.low_head(x_low))
         high_delta = nn.functional.softplus(self.high_head(x_high))
 
-        low = mid.detach() - low_delta
-        high = mid.detach() + high_delta
+        low = mid - low_delta
+        high = mid + high_delta
 
         return torch.cat([low, mid, high], dim=1)
