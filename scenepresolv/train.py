@@ -159,16 +159,16 @@ def train(
         {"params": model.mlp.parameters(), "lr": 5e-4, "weight_decay": 1e-3},
         {"params": model.low_head.parameters(), "lr": 1e-3},
         # {"params": model.mid_head.parameters(), "lr": 1e-2},
-        {"params": model.high_head.parameters(), "lr": 2e-2},
-        {"params": [model.beta_high], "lr": 1e-2},
+        {"params": model.high_head.parameters(), "lr": 1e-3},
+        {"params": [model.beta_high], "lr": 5e-4},
         {"params": [model.beta_low], "lr": 5e-4},
     ], weight_decay=1e-4)
 
-    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-    #     opt,
-    #     T_max=epochs,
-    #     eta_min=1e-4,
-    # )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        opt,
+        T_max=epochs,
+        eta_min=1e-4,
+    )
 
     # TODO allow this to vary within batch?
     wl = torch.tensor(wl).type(torch.float32).to(device)
@@ -187,9 +187,9 @@ def train(
                 pred, target,
                 quantiles=quantiles
             )
-            width_penalty = (pred[:, 1] - pred[:, 0]).mean() * 0.1
+            # width_penalty = (pred[:, 1] - pred[:, 0]).mean() * 0.1
             # loss = pinball_loss_low + pinball_loss_mid + pinball_loss_hi + width_penalty
-            loss = pinball_loss_low + pinball_loss_hi + width_penalty
+            loss = pinball_loss_low + pinball_loss_hi
 
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
@@ -213,7 +213,7 @@ def train(
         test_eval_dict = evaluation(
             test_dataloader, model, wl, device, epoch, quantiles 
         )
-        # scheduler.step()
+        scheduler.step()
         for key, value in test_eval_dict.items():
             run.log({f"test/{key}": value})
         run.log({"epoch": epoch})
