@@ -52,14 +52,14 @@ def sample_rowcol(
     spacecraft_idx=None, iter_limit=20
 ):
     iters = 0
-    row = np.random.randint(0, atm_im.shape[0], nsamples)
-    col = np.random.randint(0, atm_im.shape[1], nsamples)
+    row = np.random.randint(0, atm_im.shape[0] - 1, nsamples)
+    col = np.random.randint(0, atm_im.shape[1] - 1, nsamples)
     rowcol = np.array([row, col]).T
     check = True
     while check:
         n = len(rowcol) - len(np.unique(rowcol, axis=0))
-        row_add = np.random.randint(0, atm_im.shape[0], n)
-        col_add = np.random.randint(0, atm_im.shape[1], n)
+        row_add = np.random.randint(0, atm_im.shape[0] - 1, n)
+        col_add = np.random.randint(0, atm_im.shape[1] - 1, n)
         rowcol = np.vstack([
             np.unique(rowcol, axis=0),
             np.array([row_add, col_add]).T

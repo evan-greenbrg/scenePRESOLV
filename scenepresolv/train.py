@@ -132,6 +132,9 @@ def train(
         worker_init_fn=init_dataloader
     )
 
+    timestamp = datetime.now().strftime(
+        f"%Y%m%d_%H%M%S_%f_{wandb_name}"
+    )
     run = init_wandb(
         wandb_project,
         wandb_entity,
@@ -150,18 +153,18 @@ def train(
     model.apply(init_weights)
     with torch.no_grad():
         model.low_head[3].bias.fill_(1.0)
-        # model.mid_head[3].bias.fill_(2.0)
+        model.mid_head[3].bias.fill_(2.0)
         model.high_head[3].bias.fill_(3.0)
         model.attn_encoder.wavelength_proj.weight.data *= 2.0
 
     opt = torch.optim.AdamW([
-        {"params": model.attn_encoder.parameters(), "lr": 1e-3, "weight_decay": 1e-3},
-        {"params": model.mlp.parameters(), "lr": 5e-4, "weight_decay": 1e-3},
-        {"params": model.low_head.parameters(), "lr": 1e-3},
-        # {"params": model.mid_head.parameters(), "lr": 1e-2},
-        {"params": model.high_head.parameters(), "lr": 1e-3},
-        {"params": [model.beta_high], "lr": 5e-4},
-        {"params": [model.beta_low], "lr": 5e-4},
+        {"params": model.attn_encoder.parameters(), "lr": 5e-4, "weight_decay": 1e-3},
+        {"params": model.mlp.parameters(), "lr": 1e-4, "weight_decay": 1e-3},
+        {"params": model.low_head.parameters(), "lr": 5e-4},
+        {"params": model.mid_head.parameters(), "lr": 5e-4},
+        {"params": model.high_head.parameters(), "lr": 5e-4},
+        {"params": [model.beta_high], "lr": 1e-4},
+        {"params": [model.beta_low], "lr": 1e-4},
     ], weight_decay=1e-4)
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -182,14 +185,14 @@ def train(
             target = batch_['atmosphere'].to(device)
             pred = model(x, wl)
 
-            # pinball_loss_low, pinball_loss_mid, pinball_loss_hi = pinball_loss(
-            pinball_loss_low, pinball_loss_hi = pinball_loss(
+            pinball_loss_low, pinball_loss_mid, pinball_loss_hi = pinball_loss(
+            # pinball_loss_low, pinball_loss_hi = pinball_loss(
                 pred, target,
                 quantiles=quantiles
             )
             # width_penalty = (pred[:, 1] - pred[:, 0]).mean() * 0.1
-            # loss = pinball_loss_low + pinball_loss_mid + pinball_loss_hi + width_penalty
-            loss = pinball_loss_low + pinball_loss_hi
+            loss = (5 * pinball_loss_low) + pinball_loss_mid + (5 * pinball_loss_hi)
+            # loss = pinball_loss_low + pinball_loss_hi
 
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
@@ -218,9 +221,6 @@ def train(
             run.log({f"test/{key}": value})
         run.log({"epoch": epoch})
 
-        timestamp = datetime.now().strftime(
-            f"%Y%m%d_%H%M%S_%f_{wandb_name}"
-        )
         if save_every_epoch:
             torch.save(
                 model.state_dict(),

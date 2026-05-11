@@ -96,12 +96,12 @@ class Model(nn.Module):
             nn.GELU(),
             nn.Linear(hidden, 1)
         )
-        # self.mid_head = nn.Sequential(
-        #     nn.LayerNorm(hidden),
-        #     nn.Linear(hidden, hidden),
-        #     nn.GELU(),
-        #     nn.Linear(hidden, 1)
-        # )
+        self.mid_head = nn.Sequential(
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, 1)
+        )
         self.high_head = nn.Sequential(
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden),
@@ -129,7 +129,7 @@ class Model(nn.Module):
         beta_low  = nn.functional.softplus(self.beta_low) + 1.0
         beta_high = nn.functional.softplus(self.beta_high) + 1.0
 
-        # x_mean = x.mean(dim=1)
+        x_mid = x.mean(dim=1)
         x_low = self.soft_pool(
             x,
             q=-1, beta=beta_low
@@ -140,12 +140,12 @@ class Model(nn.Module):
         )
 
         # Targets
-        # mid = self.mid_head(x_mid)
-
-        low = nn.functional.softplus(self.low_head(x_low))
+        low_delta = nn.functional.softplus(self.low_head(x_low))
+        mid = nn.functional.softplus(self.mid_head(x_mid))
         high_delta = nn.functional.softplus(self.high_head(x_high))
 
-        high = low + high_delta
+        low = mid - low_delta
+        high = mid + high_delta
 
-        return torch.cat([low, high], dim=1)
-        # return torch.cat([low, mid, high], dim=1)
+        # return torch.cat([low, high], dim=1)
+        return torch.cat([low, mid, high], dim=1)
