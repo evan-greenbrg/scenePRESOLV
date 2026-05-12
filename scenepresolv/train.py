@@ -158,13 +158,13 @@ def train(
         model.attn_encoder.wavelength_proj.weight.data *= 2.0
 
     opt = torch.optim.AdamW([
-        {"params": model.attn_encoder.parameters(), "lr": 5e-4, "weight_decay": 1e-3},
-        {"params": model.mlp.parameters(), "lr": 1e-4, "weight_decay": 1e-3},
-        {"params": model.low_head.parameters(), "lr": 5e-4},
-        {"params": model.mid_head.parameters(), "lr": 5e-4},
-        {"params": model.high_head.parameters(), "lr": 5e-4},
-        {"params": [model.beta_high], "lr": 1e-4},
-        {"params": [model.beta_low], "lr": 1e-4},
+        {"params": model.attn_encoder.parameters(), "lr": 1e-3, "weight_decay": 1e-3},
+        {"params": model.mlp.parameters(), "lr": 5e-4, "weight_decay": 1e-3},
+        {"params": model.low_head.parameters(), "lr": 1e-3},
+        {"params": model.mid_head.parameters(), "lr": 1e-3},
+        {"params": model.high_head.parameters(), "lr": 1e-3},
+        {"params": [model.beta_high], "lr": 5e-4},
+        {"params": [model.beta_low], "lr": 5e-4},
     ], weight_decay=1e-4)
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
