@@ -191,7 +191,7 @@ def train(
                 quantiles=quantiles
             )
             # width_penalty = (pred[:, 1] - pred[:, 0]).mean() * 0.1
-            loss = (5 * pinball_loss_low) + pinball_loss_mid + (5 * pinball_loss_hi)
+            loss = (20 * pinball_loss_low) + pinball_loss_mid + (20 * pinball_loss_hi)
             # loss = pinball_loss_low + pinball_loss_hi
 
             loss.backward()
